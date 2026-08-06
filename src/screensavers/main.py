@@ -10,7 +10,7 @@ from screensavers.window import ScreensaversWindow
 class IdleDaemon:
     def __init__(self, app):
         self.app = app
-        self.settings = Gio.Settings.new("software.sevensummits.screensavor")
+        self.settings = Gio.Settings.new("software._7summits.ScreenSavor")
         self.watch_id = 0
         self.dbus_proxy = None
         self.saver_win = None
@@ -104,7 +104,7 @@ class IdleDaemon:
 
 class ScreensaversApplication(Adw.Application):
     def __init__(self):
-        super().__init__(application_id='software.sevensummits.screensavor',
+        super().__init__(application_id='software._7summits.ScreenSavor',
                          flags=Gio.ApplicationFlags.FLAGS_NONE)
         self.daemon = None
 

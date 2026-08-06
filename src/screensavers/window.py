@@ -17,7 +17,7 @@ class ScreensaversWindow(Adw.ApplicationWindow):
         header = Adw.HeaderBar()
         self.box.append(header)
         
-        self.settings = Gio.Settings.new("software.sevensummits.screensavor")
+        self.settings = Gio.Settings.new("software._7summits.ScreenSavor")
 
         # Screensavers List
         list_box = Gtk.ListBox()

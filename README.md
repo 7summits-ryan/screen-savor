@@ -14,16 +14,27 @@ A fun, lightweight screensaver application for GNOME desktops built with GTK4 an
 ### Flatpak (Recommended)
 
 ```bash
-flatpak-builder --user --install --force-clean build-dir software.sevensummits.screensavor.yml
-flatpak run software.sevensummits.screensavor
+flatpak-builder --user --install --force-clean build-dir software._7summits.ScreenSavor.yml
+flatpak run software._7summits.ScreenSavor
 ```
 
 ### Requirements
 
-- GNOME Platform/SDK 46
+- GNOME Platform/SDK 50
 - Python 3
 - GTK4
 - Libadwaita
+
+### Screenshots
+
+The screenshots referenced by the AppStream metainfo live in `data/screenshots/` and are
+regenerated with `build-aux/capture-screenshots.py`, which renders the savers and the main
+window offscreen from inside the Flatpak:
+
+```bash
+flatpak run --command=python3 --filesystem="$PWD" software._7summits.ScreenSavor \
+  "$PWD/build-aux/capture-screenshots.py" "$PWD/data/screenshots"
+```
 
 ## License
 

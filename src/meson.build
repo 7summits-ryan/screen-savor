@@ -17,8 +17,8 @@ conf.set('localedir', join_paths(get_option('prefix'), get_option('localedir')))
 conf.set('pkgdatadir', pkgdatadir)
 
 configure_file(
-  input: 'software.sevensummits.screensavor.in',
-  output: 'software.sevensummits.screensavor',
+  input: 'software._7summits.ScreenSavor.in',
+  output: 'software._7summits.ScreenSavor',
   configuration: conf,
   install: true,
   install_dir: get_option('bindir'),

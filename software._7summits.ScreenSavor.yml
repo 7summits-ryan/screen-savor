@@ -1,0 +1,22 @@
+# Local development manifest — builds from the working tree.
+# The Flathub submission uses an identical manifest with a pinned git source.
+id: software._7summits.ScreenSavor
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+command: software._7summits.ScreenSavor
+finish-args:
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  # Idle detection. GNOME implements neither ext-idle-notify-v1 nor
+  # org.freedesktop.ScreenSaver.GetSessionIdleTime (it returns NotSupported), and the
+  # Inhibit portal only reports the session screensaver, not a configurable timeout.
+  - --talk-name=org.gnome.Mutter.IdleMonitor
+modules:
+  - name: screen-savor
+    buildsystem: meson
+    sources:
+      - type: dir
+        path: .

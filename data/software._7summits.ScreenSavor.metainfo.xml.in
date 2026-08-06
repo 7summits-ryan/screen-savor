@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>software._7summits.ScreenSavor</id>
+  <name>Screen Savor</name>
+  <summary>A collection of simple screensavers</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <description>
+    <p>
+      Screen Savor is a lightweight screensaver application for GNOME desktops, built
+      with GTK4 and Libadwaita. Pick a visualizer, set an idle timeout, and let it take
+      over the screen when you step away.
+    </p>
+    <p>Three visualizers are included:</p>
+    <ul>
+      <li>DVD Logo, the bouncing logo waiting for that perfect corner hit</li>
+      <li>Matrix Rain, cascading green glyphs</li>
+      <li>Color Pulse, slow shifting washes of colour</li>
+    </ul>
+    <p>
+      Savers can be launched on demand, or started automatically after a configurable
+      period of inactivity.
+    </p>
+  </description>
+  <launchable type="desktop-id">software._7summits.ScreenSavor.desktop</launchable>
+  <developer id="software.7summits">
+    <name>7Summits</name>
+  </developer>
+  <content_rating type="oars-1.1"/>
+  <branding>
+    <color type="primary" scheme_preference="light">#8fc0f5</color>
+    <color type="primary" scheme_preference="dark">#0a448a</color>
+  </branding>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/7summits-ryan/screen-savor/main/data/screenshots/main-window.png</image>
+      <caption>Choose a screensaver and configure the idle timeout</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/7summits-ryan/screen-savor/main/data/screenshots/dvd-logo.png</image>
+      <caption>The DVD Logo saver bouncing around the screen</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/7summits-ryan/screen-savor/main/data/screenshots/matrix-rain.png</image>
+      <caption>The Matrix Rain saver</caption>
+    </screenshot>
+  </screenshots>
+  <url type="homepage">https://7summits.software</url>
+  <url type="bugtracker">https://github.com/7summits-ryan/screen-savor/issues</url>
+  <url type="vcs-browser">https://github.com/7summits-ryan/screen-savor</url>
+  <releases>
+    <release version="0.1.1" date="2026-08-05">
+      <description>
+        <p>Initial Flathub release.</p>
+        <ul>
+          <li>New application icon, provided as a scalable SVG</li>
+          <li>Updated to the GNOME 50 runtime</li>
+        </ul>
+      </description>
+    </release>
+    <release version="0.1.0" date="2026-08-05">
+      <description>
+        <p>Initial release of Screen Savor.</p>
+      </description>
+    </release>
+  </releases>
+</component>

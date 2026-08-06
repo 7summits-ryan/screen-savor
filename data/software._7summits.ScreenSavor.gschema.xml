@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist>
-  <schema id="software.sevensummits.screensavor" path="/software/sevensummits/screensavor/">
+  <schema id="software._7summits.ScreenSavor" path="/software/_7summits/ScreenSavor/">
     <key name="daemon-enabled" type="b">
       <default>false</default>
       <summary>Enable Idle Screensaver</summary>
