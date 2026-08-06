@@ -19,8 +19,8 @@
     </ul>
     <p>
       Savers can be launched on demand, or started automatically after a configurable
-      period of inactivity. Idle detection works on GNOME and on desktops that implement
-      org.freedesktop.ScreenSaver, such as KDE Plasma.
+      period of inactivity. Idle detection works on GNOME, and on KDE Plasma and other
+      compositors that support the ext-idle-notify-v1 Wayland protocol.
     </p>
     <p>
       Every connected monitor is covered, each running its own animation, and displays

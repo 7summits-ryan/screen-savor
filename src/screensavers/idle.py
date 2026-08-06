@@ -1,17 +1,31 @@
 """Idle detection, one backend per desktop.
 
-There is no cross-desktop way to ask how long the session has been idle, so
-this picks a backend at start-up by trying each one and keeping the first that
-answers. Probing beats reading XDG_CURRENT_DESKTOP: GNOME Shell owns
+There is no single way to ask how long the session has been idle, so this picks
+a backend at start-up by trying each one and keeping the first that answers.
+Probing beats reading XDG_CURRENT_DESKTOP: GNOME Shell owns
 org.freedesktop.ScreenSaver too and would be misread as KDE on a name check
 alone, and a capability probe also picks up the desktops nobody thought to
 special-case.
 
-Each backend is asked to prove itself with a harmless read - owning the bus
-name is not the same as implementing the method behind it.
+Each backend is asked to prove itself before it is accepted - owning a bus name
+or a protocol is not the same as implementing what sits behind it. That is not
+a hypothetical: GNOME and KDE both own org.freedesktop.ScreenSaver, and both
+answer GetSessionIdleTime with NotSupported.
+
+The three, in the order they are tried:
+
+  ext-idle-notify-v1  a Wayland protocol, so no bus permission is needed at
+                      all. Event-driven. KWin and wlroots implement it; Mutter
+                      does not.
+  Mutter IdleMonitor  GNOME's own D-Bus interface, and the only thing that
+                      reports idle time there. Also event-driven.
+  freedesktop         polled, and a genuine long shot - see above - but it
+                      costs nothing to ask on desktops we have not met.
 """
 
 from gi.repository import Gio, GLib
+
+from screensavers import wlidle
 
 
 class _Backend:
@@ -111,7 +125,12 @@ class MutterBackend(_Backend):
 
 
 class FreedesktopBackend(_Backend):
-    """KDE Plasma and friends. Nothing signals us, so the idle time is polled.
+    """Last resort. Nothing signals us, so the idle time is polled.
+
+    This was written for KDE and turns out not to work there: Plasma owns the
+    name but answers NotSupported, the same as GNOME. It is kept because it is
+    cheap and might yet be the only thing some desktop offers, but anything
+    current is expected to match one of the two backends above.
 
     Mutter's watch re-arms itself once the user is active again; polling has to
     do that bookkeeping by hand, which is what _fired is for - without it every
@@ -167,9 +186,38 @@ class FreedesktopBackend(_Backend):
         return GLib.SOURCE_CONTINUE
 
 
-# Tried in order. Mutter first: on GNOME both names are owned, but only this
-# one actually reports an idle time.
-BACKENDS = (MutterBackend, FreedesktopBackend)
+class WaylandBackend:
+    """KDE and wlroots. The compositor signals us through ext-idle-notify-v1.
+
+    Not a _Backend: there is no D-Bus proxy here, only a Wayland connection, so
+    it shares the arm/disarm/probe shape without the plumbing.
+    """
+
+    LABEL = "ext-idle-notify-v1 (KDE and wlroots)"
+
+    def __init__(self, notifier):
+        self.notifier = notifier
+
+    @classmethod
+    def probe(cls, callback):
+        # Binding either works or it does not, so unlike the D-Bus backends
+        # there is nothing to wait for - answer straight away.
+        notifier = wlidle.IdleNotifier.open()
+        callback(cls(notifier) if notifier is not None else None)
+
+    def arm(self, timeout_ms, on_idle):
+        self.notifier.watch(timeout_ms, on_idle)
+
+    def disarm(self):
+        self.notifier.cancel()
+
+
+# Tried in order. The Wayland protocol first: it is the standard, it is
+# event-driven, and it needs no bus permission at all. Mutter second, because
+# GNOME implements no idle protocol and only its own interface reports an idle
+# time. The freedesktop interface is last and rarely works - GNOME and KDE both
+# own the name while returning NotSupported - but it costs nothing to ask.
+BACKENDS = (WaylandBackend, MutterBackend, FreedesktopBackend)
 
 
 def detect(callback):

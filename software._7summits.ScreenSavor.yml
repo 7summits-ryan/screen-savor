@@ -10,12 +10,15 @@ finish-args:
   - --socket=fallback-x11
   - --socket=wayland
   - --device=dri
-  # Idle detection. GNOME implements neither ext-idle-notify-v1 nor
-  # org.freedesktop.ScreenSaver.GetSessionIdleTime (it returns NotSupported), and the
+  # Idle detection. KDE and wlroots are handled by the ext-idle-notify-v1 Wayland
+  # protocol, which rides the socket above and so needs nothing declared here.
+  # GNOME implements no idle protocol - not ext-idle-notify-v1, and not
+  # org.freedesktop.ScreenSaver.GetSessionIdleTime (it returns NotSupported) - and the
   # Inhibit portal only reports the session screensaver, not a configurable timeout.
+  # Mutter's own interface is the only thing left there.
   - --talk-name=org.gnome.Mutter.IdleMonitor
-  # KDE and others do implement GetSessionIdleTime, so it is the fallback when
-  # Mutter is absent. Which backend gets used is probed for at start-up.
+  # A polled last resort for desktops with neither of the above. KDE owns this name
+  # but answers NotSupported, so it is not the KDE path despite the name.
   - --talk-name=org.freedesktop.ScreenSaver
 modules:
   - name: screen-savor
