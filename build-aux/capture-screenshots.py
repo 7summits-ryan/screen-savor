@@ -18,13 +18,19 @@ random.seed(7)
 
 
 def render_saver(saver, frames, path, setup=None):
-    """Drive a DrawingArea's draw func straight onto an image surface."""
+    """Drive a DrawingArea's draw func straight onto an image surface.
+
+    There is no frame clock offscreen, so the savers are stepped by hand. The
+    first draw is what sizes and seeds them, so draw and step alternate. The
+    step is long enough to guarantee the Matrix saver advances a row each time.
+    """
     surface = cairo.ImageSurface(cairo.FORMAT_RGB24, W, H)
     cr = cairo.Context(surface)
     if setup:
         setup(saver)
     for _ in range(frames):
         saver.on_draw(saver, cr, W, H)
+        saver.advance(1 / 20)
     surface.write_to_png(path)
     print("wrote", path)
 
@@ -36,8 +42,8 @@ def dvd_setup(s):
 
 
 render_saver(DVDLogoSaver(), 1, f"{OUT}/dvd-logo.png", dvd_setup)
-# Matrix needs many frames for the trails to build up through the fade layer.
-render_saver(MatrixSaver(), 90, f"{OUT}/matrix-rain.png")
+# Matrix opens with drops already in flight; a few steps just varies the frame.
+render_saver(MatrixSaver(), 40, f"{OUT}/matrix-rain.png")
 # ColorPulseSaver is a single full-screen cr.paint(), so a capture of it is just a
 # flat colour field. Not worth shipping as a store screenshot.
 
