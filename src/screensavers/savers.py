@@ -7,45 +7,13 @@ import cairo
 import math
 import random
 
+from screensavers.base import _AnimatedSaver
+from screensavers.gorillas import GorillasSaver
+
 # Glyph atlases, keyed by (font_px, scale). One saver instance runs per monitor,
 # and the masks are only ever read, so screens that work out to the same cell
 # size share a single rasterisation instead of building one apiece.
 _ATLAS_CACHE = {}
-
-class _AnimatedSaver(Gtk.DrawingArea):
-    """Base class that drives an animation off the widget's frame clock.
-
-    The frame clock only runs while the widget is actually on screen, so a saver
-    that is hidden or occluded costs nothing and resumes cleanly when it comes
-    back - a GLib timeout has to tear itself down on unmap and never restarts.
-    It also paces to the real display rather than a fixed 60Hz guess.
-
-    Subclasses get the seconds elapsed since the last frame and return whether
-    anything changed, so a frame that would render identically is never drawn.
-    """
-
-    MAX_DT = 0.1  # after a stall, carry on as if one slow frame had passed
-
-    def __init__(self):
-        super().__init__()
-        self.set_draw_func(self.on_draw)
-        self._last_frame = 0
-        self.add_tick_callback(self._on_tick)
-
-    def advance(self, dt):
-        """Step the animation by dt seconds. Returns True if a redraw is due."""
-        raise NotImplementedError
-
-    def _on_tick(self, widget, clock):
-        now = clock.get_frame_time()
-        if self._last_frame:
-            dt = min((now - self._last_frame) / 1000000.0, self.MAX_DT)
-        else:
-            dt = 0.0
-        self._last_frame = now
-        if self.advance(dt):
-            self.queue_draw()
-        return GLib.SOURCE_CONTINUE
 
 
 class DVDLogoSaver(_AnimatedSaver):
@@ -479,6 +447,7 @@ class ColorPulseSaver(_AnimatedSaver):
 SAVERS = (
     ("DVD Logo", DVDLogoSaver),
     ("Matrix Rain", MatrixSaver),
+    ("Gorillas", GorillasSaver),
     ("Color Pulse", ColorPulseSaver),
 )
 
@@ -486,3 +455,21 @@ SAVERS = (
 def saver_for_name(name):
     """Class for a saver's display name, falling back to the first saver."""
     return dict(SAVERS).get(name, SAVERS[0][1])
+
+
+def load_tuning(settings):
+    """Apply stored adjustments to the savers that accept them.
+
+    A saver's tuning is one dictionary in GSettings rather than a key apiece, so
+    values it no longer recognises are simply dropped and anything absent keeps
+    its default. Called once at start-up; from then on the preferences window
+    writes straight into the live dictionaries.
+    """
+    for _name, saver_cls in SAVERS:
+        key = getattr(saver_cls, "TUNING_KEY", None)
+        if key is None:
+            continue
+        saver_cls.TUNING.update(saver_cls.DEFAULT_TUNING)
+        for name, value in settings.get_value(key).unpack().items():
+            if name in saver_cls.DEFAULT_TUNING:
+                saver_cls.TUNING[name] = float(value)

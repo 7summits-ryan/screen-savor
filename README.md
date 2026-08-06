@@ -4,7 +4,8 @@ A fun, lightweight screensaver application built with GTK4 and Libadwaita.
 
 ## Features
 
-- **Multiple Screensavers**: Choose from DVD Logo, Matrix Rain, and Color Pulse visualizers
+- **Multiple Screensavers**: Choose from DVD Logo, Matrix Rain, Gorillas, and Color Pulse
+  visualizers
 - **Idle Detection**: Automatically activates after a configurable idle timeout. Uses the
   `ext-idle-notify-v1` Wayland protocol on KDE Plasma and wlroots compositors, and GNOME's
   Mutter IdleMonitor on GNOME, which implements no idle protocol. The backend is probed

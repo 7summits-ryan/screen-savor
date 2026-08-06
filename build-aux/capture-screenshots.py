@@ -8,7 +8,8 @@ gi.require_version('Adw', '1')
 from gi.repository import Gtk, Adw, GLib, Gdk
 
 sys.path.insert(1, '/app/share/screensavers')
-from screensavers.savers import DVDLogoSaver, MatrixSaver
+from screensavers.savers import DVDLogoSaver, MatrixSaver, GorillasSaver
+from screensavers.gorillas import FLIGHT, LOGICAL_H
 from screensavers.window import ScreensaversWindow
 
 OUT = sys.argv[1]
@@ -25,11 +26,12 @@ def render_saver(saver, frames, path, setup=None):
     step is long enough to guarantee the Matrix saver advances a row each time.
     """
     surface = cairo.ImageSurface(cairo.FORMAT_RGB24, W, H)
-    cr = cairo.Context(surface)
     if setup:
         setup(saver)
     for _ in range(frames):
-        saver.on_draw(saver, cr, W, H)
+        # A fresh context per frame, the way GTK hands one to the draw func -
+        # a saver that transforms the context would otherwise compound it.
+        saver.on_draw(saver, cairo.Context(surface), W, H)
         saver.advance(1 / 20)
     surface.write_to_png(path)
     print("wrote", path)
@@ -41,9 +43,35 @@ def dvd_setup(s):
     s.color = (0.98, 0.51, 0.18)
 
 
+def render_gorillas(path):
+    """Catch the match with a banana actually in the air.
+
+    Stepping a fixed number of frames would land wherever it lands - most of
+    them are two gorillas standing still - so run the simulation on until a
+    throw is over the city, then draw that.
+    """
+    random.seed(3)
+    saver = GorillasSaver()
+    surface = cairo.ImageSurface(cairo.FORMAT_RGB24, W, H)
+    saver.on_draw(saver, cairo.Context(surface), W, H)
+
+    for _ in range(6000):
+        saver.advance(1 / 60)
+        if saver._state != FLIGHT or saver._ban is None:
+            continue
+        x, y = saver._ban
+        if 0 < x < saver._lw and LOGICAL_H * 0.2 < y < LOGICAL_H * 0.55:
+            break
+
+    saver.on_draw(saver, cairo.Context(surface), W, H)
+    surface.write_to_png(path)
+    print("wrote", path)
+
+
 render_saver(DVDLogoSaver(), 1, f"{OUT}/dvd-logo.png", dvd_setup)
 # Matrix opens with drops already in flight; a few steps just varies the frame.
 render_saver(MatrixSaver(), 40, f"{OUT}/matrix-rain.png")
+render_gorillas(f"{OUT}/gorillas.png")
 # ColorPulseSaver is a single full-screen cr.paint(), so a capture of it is just a
 # flat colour field. Not worth shipping as a store screenshot.
 

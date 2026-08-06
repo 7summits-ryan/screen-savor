@@ -6,7 +6,7 @@ gi.require_version('Adw', '1')
 from gi.repository import Gtk, Gio, Adw, GLib
 
 from screensavers import idle
-from screensavers.savers import saver_for_name
+from screensavers.savers import load_tuning, saver_for_name
 from screensavers.session import SaverSession
 from screensavers.window import ScreensaversWindow
 
@@ -98,6 +98,9 @@ class ScreensaversApplication(Adw.Application):
 
     def do_startup(self):
         Adw.Application.do_startup(self)
+        # Before anything can run a saver, so an idle start uses the same
+        # values the preferences window shows.
+        load_tuning(Gio.Settings.new('software._7summits.ScreenSavor'))
         self.daemon = IdleDaemon(self)
 
     def do_activate(self):

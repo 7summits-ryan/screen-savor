@@ -21,5 +21,13 @@
       <summary>Default Screensaver</summary>
       <description>The screensaver to run when idle.</description>
     </key>
+    <key name="gorillas-tuning" type="a{sd}">
+      <default>{}</default>
+      <summary>Gorillas Tuning</summary>
+      <description>
+        Adjusted values for the Gorillas screensaver, keyed by name. Anything
+        left out falls back to the built-in default.
+      </description>
+    </key>
   </schema>
 </schemalist>

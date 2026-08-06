@@ -11,10 +11,11 @@
       Libadwaita. Pick a visualizer, set an idle timeout, and let it take over every
       screen when you step away.
     </p>
-    <p>Three visualizers are included:</p>
+    <p>Four visualizers are included:</p>
     <ul>
       <li>DVD Logo, the bouncing logo waiting for that perfect corner hit</li>
       <li>Matrix Rain, cascading green glyphs</li>
+      <li>Gorillas, two apes lobbing bananas across a crumbling skyline</li>
       <li>Color Pulse, slow shifting washes of colour</li>
     </ul>
     <p>
@@ -48,6 +49,10 @@
     <screenshot>
       <image>https://raw.githubusercontent.com/7summits-ryan/screen-savor/main/data/screenshots/matrix-rain.png</image>
       <caption>The Matrix Rain saver</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/7summits-ryan/screen-savor/main/data/screenshots/gorillas.png</image>
+      <caption>The Gorillas saver mid-throw</caption>
     </screenshot>
   </screenshots>
   <url type="homepage">https://7summits.software</url>
