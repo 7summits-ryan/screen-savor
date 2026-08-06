@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Screen Savor
+Comment=A collection of simple screensavers
+Exec=software.sevensummits.screensavor
+Icon=software.sevensummits.screensavor
+Terminal=false
+Type=Application
+Categories=Utility;
+StartupNotify=true

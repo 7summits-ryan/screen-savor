@@ -1,0 +1,15 @@
+#!@PYTHON@
+
+import os
+import sys
+import signal
+
+pkgdatadir = '@pkgdatadir@'
+localedir = '@localedir@'
+
+sys.path.insert(1, pkgdatadir)
+signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+if __name__ == '__main__':
+    import screensavers.main
+    sys.exit(screensavers.main.main(sys.argv))

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>software.sevensummits.screensavor</id>
+  <name>Screen Savor</name>
+  <summary>A collection of simple screensavers</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <description>
+    <p>A simple GTK4 application that provides full-screen visualizers and screensavers.</p>
+  </description>
+  <launchable type="desktop-id">software.sevensummits.screensavor.desktop</launchable>
+  <url type="homepage">https://7summits.software</url>
+  <url type="bugtracker">https://github.com/7summits-ryan/screen-savor/issues</url>
+  <developer_name>7Summits</developer_name>
+  <provides>
+    <binary>software.sevensummits.screensavor</binary>
+  </provides>
+  <releases>
+    <release version="0.1.0" date="2026-08-05">
+      <description>
+        <p>Initial release of the Screen Savor application.</p>
+      </description>
+    </release>
+  </releases>
+</component>

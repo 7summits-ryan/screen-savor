@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="software.sevensummits.screensavor" path="/software/sevensummits/screensavor/">
+    <key name="daemon-enabled" type="b">
+      <default>false</default>
+      <summary>Enable Idle Screensaver</summary>
+      <description>Whether to run the screensaver automatically when idle.</description>
+    </key>
+    <key name="idle-timeout" type="i">
+      <default>5</default>
+      <summary>Idle Timeout</summary>
+      <description>Idle time in minutes before the screensaver starts.</description>
+    </key>
+    <key name="default-saver" type="s">
+      <default>'DVD Logo'</default>
+      <summary>Default Screensaver</summary>
+      <description>The screensaver to run when idle.</description>
+    </key>
+  </schema>
+</schemalist>
