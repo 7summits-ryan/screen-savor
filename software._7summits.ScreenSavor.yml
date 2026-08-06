@@ -14,6 +14,9 @@ finish-args:
   # org.freedesktop.ScreenSaver.GetSessionIdleTime (it returns NotSupported), and the
   # Inhibit portal only reports the session screensaver, not a configurable timeout.
   - --talk-name=org.gnome.Mutter.IdleMonitor
+  # KDE and others do implement GetSessionIdleTime, so it is the fallback when
+  # Mutter is absent. Which backend gets used is probed for at start-up.
+  - --talk-name=org.freedesktop.ScreenSaver
 modules:
   - name: screen-savor
     buildsystem: meson

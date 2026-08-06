@@ -6,6 +6,8 @@ python_sources = [
   'screensavers/main.py',
   'screensavers/window.py',
   'screensavers/savers.py',
+  'screensavers/session.py',
+  'screensavers/idle.py',
 ]
 
 python_installation.install_sources(python_sources, subdir: 'screensavers')

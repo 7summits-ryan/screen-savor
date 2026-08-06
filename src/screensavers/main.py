@@ -5,54 +5,65 @@ gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 from gi.repository import Gtk, Gio, Adw, GLib
 
+from screensavers import idle
+from screensavers.savers import saver_for_name
+from screensavers.session import SaverSession
 from screensavers.window import ScreensaversWindow
 
 class IdleDaemon:
+    """Starts the screensaver once the session has been idle long enough.
+
+    Which desktop we are on decides how idle time is discovered, so the backend
+    is probed for at start-up rather than assumed - see screensavers.idle. Until
+    that probe lands there is nothing to arm, and if it comes back empty the
+    daemon stays inert and says so through `status`.
+    """
+
     def __init__(self, app):
         self.app = app
         self.settings = Gio.Settings.new("software._7summits.ScreenSavor")
-        self.watch_id = 0
-        self.dbus_proxy = None
-        self.saver_win = None
+        self.backend = None
+        self.detected = False
+        self.session = None
         self.is_holding = False
-        
+        self.on_status_changed = None
+
         self.settings.connect("changed::daemon-enabled", self.update_daemon)
         self.settings.connect("changed::idle-timeout", self.update_daemon)
-        
-        # Connect to DBus
-        Gio.DBusProxy.new_for_bus(
-            Gio.BusType.SESSION,
-            Gio.DBusProxyFlags.NONE,
-            None,
-            "org.gnome.Mutter.IdleMonitor",
-            "/org/gnome/Mutter/IdleMonitor/Core",
-            "org.gnome.Mutter.IdleMonitor",
-            None,
-            self.on_proxy_ready
-        )
 
-    def on_proxy_ready(self, source_object, result, user_data=None):
-        try:
-            self.dbus_proxy = Gio.DBusProxy.new_for_bus_finish(result)
-            self.dbus_proxy.connect("g-signal", self.on_dbus_signal)
-            self.update_daemon()
-        except Exception as e:
-            print(f"Error connecting to IdleMonitor: {e}")
+        idle.detect(self.on_backend_detected)
+
+    @property
+    def available(self):
+        return self.backend is not None
+
+    @property
+    def status(self):
+        """One line on the state of idle detection, for the preferences window."""
+        if not self.detected:
+            return "Checking for idle detection support…"
+        if self.backend is None:
+            return "Not supported on this desktop - use the Run buttons above"
+        return f"Using {self.backend.LABEL}"
+
+    def on_backend_detected(self, backend):
+        self.backend = backend
+        self.detected = True
+        self.update_daemon()
+        if self.on_status_changed is not None:
+            self.on_status_changed(self)
 
     def update_daemon(self, *args):
-        if self.dbus_proxy is None:
+        if not self.detected:
             return
 
-        # Remove old watch
-        if self.watch_id != 0:
-            try:
-                self.dbus_proxy.call_sync("RemoveWatch", GLib.Variant("(u)", (self.watch_id,)), Gio.DBusCallFlags.NONE, -1, None)
-            except Exception:
-                pass
-            self.watch_id = 0
+        if self.backend is not None:
+            self.backend.disarm()
 
-        enabled = self.settings.get_boolean("daemon-enabled")
-        
+        # Holding with no backend would keep the process resident forever
+        # without ever being able to fire.
+        enabled = self.settings.get_boolean("daemon-enabled") and self.available
+
         if enabled and not self.is_holding:
             self.app.hold()
             self.is_holding = True
@@ -64,43 +75,20 @@ class IdleDaemon:
             return
 
         timeout_minutes = self.settings.get_int("idle-timeout")
-        timeout_ms = timeout_minutes * 60 * 1000
-
-        try:
-            res = self.dbus_proxy.call_sync("AddIdleWatch", GLib.Variant("(t)", (timeout_ms,)), Gio.DBusCallFlags.NONE, -1, None)
-            self.watch_id = res.unpack()[0]
-        except Exception as e:
-            print(f"Error setting idle watch: {e}")
-
-    def on_dbus_signal(self, proxy, sender_name, signal_name, parameters):
-        if signal_name == "WatchFired":
-            watch_id = parameters.unpack()[0]
-            if watch_id == self.watch_id:
-                self.trigger_screensaver()
+        self.backend.arm(timeout_minutes * 60 * 1000, self.trigger_screensaver)
 
     def trigger_screensaver(self):
-        if self.saver_win is not None:
+        if self.session is not None:
             return
 
-        from screensavers.window import SaverWindow
-        from screensavers.savers import DVDLogoSaver, MatrixSaver, ColorPulseSaver
-        
-        savers = {
-            "DVD Logo": DVDLogoSaver,
-            "Matrix Rain": MatrixSaver,
-            "Color Pulse": ColorPulseSaver
-        }
-        
-        saver_name = self.settings.get_string("default-saver")
-        saver_cls = savers.get(saver_name, DVDLogoSaver)
-        
-        self.saver_win = SaverWindow(saver_cls, self.app)
-        
-        def on_close(*args):
-            self.saver_win = None
-            
-        self.saver_win.connect("close-request", on_close)
-        self.saver_win.present()
+        saver_cls = saver_for_name(self.settings.get_string("default-saver"))
+
+        def on_finished(session):
+            if self.session is session:
+                self.session = None
+
+        self.session = SaverSession(self.app, saver_cls, on_finished=on_finished)
+        self.session.start()
 
 class ScreensaversApplication(Adw.Application):
     def __init__(self):
@@ -113,7 +101,11 @@ class ScreensaversApplication(Adw.Application):
         self.daemon = IdleDaemon(self)
 
     def do_activate(self):
-        win = self.props.active_window
+        # Saver windows belong to the application too, so active_window can be
+        # one of them - launching the app again while the saver is up would
+        # re-present a fullscreen saver instead of the controls.
+        win = next((w for w in self.get_windows()
+                    if isinstance(w, ScreensaversWindow)), None)
         if not win:
             win = ScreensaversWindow(application=self)
         win.present()

@@ -11,6 +11,11 @@
       <summary>Idle Timeout</summary>
       <description>Idle time in minutes before the screensaver starts.</description>
     </key>
+    <key name="multi-monitor" type="b">
+      <default>true</default>
+      <summary>Cover All Monitors</summary>
+      <description>Show the screensaver on every connected monitor instead of just one.</description>
+    </key>
     <key name="default-saver" type="s">
       <default>'DVD Logo'</default>
       <summary>Default Screensaver</summary>

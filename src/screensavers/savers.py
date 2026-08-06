@@ -7,6 +7,11 @@ import cairo
 import math
 import random
 
+# Glyph atlases, keyed by (font_px, scale). One saver instance runs per monitor,
+# and the masks are only ever read, so screens that work out to the same cell
+# size share a single rasterisation instead of building one apiece.
+_ATLAS_CACHE = {}
+
 class _AnimatedSaver(Gtk.DrawingArea):
     """Base class that drives an animation off the widget's frame clock.
 
@@ -265,9 +270,14 @@ class MatrixSaver(_AnimatedSaver):
     def _configure(self, width, height, scale):
         font_px = max(13, min(30, round(height / 46.0)))
         if (font_px, scale) != self._atlas_key:
+            key = (font_px, scale)
+            atlas = _ATLAS_CACHE.get(key)
+            if atlas is None:
+                atlas = self._build_atlas(font_px, scale)
+                _ATLAS_CACHE[key] = atlas
             (self._glyphs, self._glows, self._pool,
-             self._cell_w, self._cell_h) = self._build_atlas(font_px, scale)
-            self._atlas_key = (font_px, scale)
+             self._cell_w, self._cell_h) = atlas
+            self._atlas_key = key
         if not self._glyphs:  # no usable font; nothing to draw
             self._cols = self._rows = 0
             self._size = (width, height)
@@ -462,3 +472,17 @@ class ColorPulseSaver(_AnimatedSaver):
         r, g, b = self.rgb
         cr.set_source_rgb(r / 255.0, g / 255.0, b / 255.0)
         cr.paint()
+
+
+# The savers on offer, in the order they are listed in the UI. The display name
+# is what gets stored in GSettings, so it doubles as the saver's identifier.
+SAVERS = (
+    ("DVD Logo", DVDLogoSaver),
+    ("Matrix Rain", MatrixSaver),
+    ("Color Pulse", ColorPulseSaver),
+)
+
+
+def saver_for_name(name):
+    """Class for a saver's display name, falling back to the first saver."""
+    return dict(SAVERS).get(name, SAVERS[0][1])

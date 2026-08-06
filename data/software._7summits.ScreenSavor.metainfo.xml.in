@@ -7,9 +7,9 @@
   <project_license>GPL-3.0-or-later</project_license>
   <description>
     <p>
-      Screen Savor is a lightweight screensaver application for GNOME desktops, built
-      with GTK4 and Libadwaita. Pick a visualizer, set an idle timeout, and let it take
-      over the screen when you step away.
+      Screen Savor is a lightweight screensaver application built with GTK4 and
+      Libadwaita. Pick a visualizer, set an idle timeout, and let it take over every
+      screen when you step away.
     </p>
     <p>Three visualizers are included:</p>
     <ul>
@@ -19,7 +19,12 @@
     </ul>
     <p>
       Savers can be launched on demand, or started automatically after a configurable
-      period of inactivity.
+      period of inactivity. Idle detection works on GNOME and on desktops that implement
+      org.freedesktop.ScreenSaver, such as KDE Plasma.
+    </p>
+    <p>
+      Every connected monitor is covered, each running its own animation, and displays
+      are picked up as they are plugged in and out.
     </p>
   </description>
   <launchable type="desktop-id">software._7summits.ScreenSavor.desktop</launchable>

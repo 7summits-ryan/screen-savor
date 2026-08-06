@@ -1,13 +1,18 @@
 # Screen Savor
 
-A fun, lightweight screensaver application for GNOME desktops built with GTK4 and Libadwaita.
+A fun, lightweight screensaver application built with GTK4 and Libadwaita.
 
 ## Features
 
 - **Multiple Screensavers**: Choose from DVD Logo, Matrix Rain, and Color Pulse visualizers
-- **Idle Detection**: Automatically activates after a configurable idle timeout using GNOME's IdleMonitor
+- **Idle Detection**: Automatically activates after a configurable idle timeout. GNOME's
+  IdleMonitor is used where it is available, falling back to `org.freedesktop.ScreenSaver`
+  on KDE Plasma and others. The backend is probed for at start-up, and the preferences
+  window reports which one was found, or that the desktop supports neither
+- **Multi-Monitor**: Covers every connected display, each with its own animation, and
+  follows monitors as they are plugged in and out. Can be limited to a single screen
 - **Settings**: Configure idle timeout, enable/disable the daemon, and pick your default screensaver
-- **Wayland Native**: Built for modern GNOME desktops
+- **Wayland Native**: Built for modern Wayland desktops
 
 ## Building
 
