@@ -21,6 +21,14 @@
       <summary>Default Screensaver</summary>
       <description>The screensaver to run when idle.</description>
     </key>
+    <key name="show-tray-icon" type="b">
+      <default>true</default>
+      <summary>Show Tray Icon</summary>
+      <description>
+        Keep an icon in the system tray, and minimize to it rather than
+        quitting when the window is closed.
+      </description>
+    </key>
     <key name="gorillas-tuning" type="a{sd}">
       <default>{}</default>
       <summary>Gorillas Tuning</summary>

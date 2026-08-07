@@ -20,6 +20,12 @@ finish-args:
   # A polled last resort for desktops with neither of the above. KDE owns this name
   # but answers NotSupported, so it is not the KDE path despite the name.
   - --talk-name=org.freedesktop.ScreenSaver
+  # The tray icon, as a StatusNotifierItem. KDE implements the watcher itself; on
+  # GNOME it comes from the AppIndicator extension, and where there is neither the
+  # app falls back to the background portal, which needs nothing declared here.
+  # The item is published as a subname of the application id, which Flatpak already
+  # lets us own, so talking to the watcher is the only permission needed.
+  - --talk-name=org.kde.StatusNotifierWatcher
 modules:
   - name: screen-savor
     buildsystem: meson
