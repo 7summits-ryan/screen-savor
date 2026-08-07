@@ -8,6 +8,7 @@ python_sources = [
   'screensavers/base.py',
   'screensavers/savers.py',
   'screensavers/gorillas.py',
+  'screensavers/pipes.py',
   'screensavers/session.py',
   'screensavers/idle.py',
   'screensavers/wlidle.py',

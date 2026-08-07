@@ -37,5 +37,13 @@
         left out falls back to the built-in default.
       </description>
     </key>
+    <key name="pipes-tuning" type="a{sd}">
+      <default>{}</default>
+      <summary>Pipes Tuning</summary>
+      <description>
+        Adjusted values for the Pipes screensaver, keyed by name. Anything
+        left out falls back to the built-in default.
+      </description>
+    </key>
   </schema>
 </schemalist>
