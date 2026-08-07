@@ -11,11 +11,13 @@
       Libadwaita. Pick a visualizer, set an idle timeout, and let it take over every
       screen when you step away.
     </p>
-    <p>Four visualizers are included:</p>
+    <p>Six visualizers are included:</p>
     <ul>
       <li>DVD Logo, the bouncing logo waiting for that perfect corner hit</li>
       <li>Matrix Rain, cascading green glyphs</li>
       <li>Gorillas, two apes lobbing bananas across a crumbling skyline</li>
+      <li>Pipes, plumbing that sprawls its way across the screen</li>
+      <li>Video Clock, a clock over a looping video of your choosing</li>
       <li>Color Pulse, slow shifting washes of colour</li>
     </ul>
     <p>
@@ -59,6 +61,33 @@
   <url type="bugtracker">https://github.com/7summits-ryan/screen-savor/issues</url>
   <url type="vcs-browser">https://github.com/7summits-ryan/screen-savor</url>
   <releases>
+    <release version="0.3.0" date="2026-08-07">
+      <description>
+        <p>
+          The Aerial Clock saver is now Video Clock, and plays a video of your
+          own.
+        </p>
+        <ul>
+          <li>Choose any MP4 as the background, or keep the one that ships with the app</li>
+          <li>Set the playback speed, from a quarter speed up to four times</li>
+          <li>Both take effect immediately, even on a screensaver already running</li>
+          <li>Screensavers no longer leave their video decoder running after a run ends</li>
+        </ul>
+      </description>
+    </release>
+    <release version="0.2.0" date="2026-08-07">
+      <description>
+        <p>Two new screensavers, and idle detection beyond GNOME.</p>
+        <ul>
+          <li>Pipes, plumbing that sprawls its way across the screen</li>
+          <li>Aerial Clock, a clock over a looping video</li>
+          <li>Gorillas, two apes lobbing bananas across a crumbling skyline</li>
+          <li>Idle detection on KDE Plasma and wlroots, through ext-idle-notify-v1</li>
+          <li>A system tray icon, and minimizing to it rather than quitting</li>
+          <li>Every connected monitor covered, and followed as displays come and go</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.1" date="2026-08-05">
       <description>
         <p>Initial Flathub release.</p>

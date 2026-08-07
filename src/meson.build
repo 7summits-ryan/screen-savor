@@ -9,7 +9,7 @@ python_sources = [
   'screensavers/savers.py',
   'screensavers/gorillas.py',
   'screensavers/pipes.py',
-  'screensavers/aerial.py',
+  'screensavers/video.py',
   'screensavers/session.py',
   'screensavers/idle.py',
   'screensavers/wlidle.py',

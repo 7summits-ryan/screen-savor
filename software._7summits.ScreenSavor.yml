@@ -26,6 +26,16 @@ finish-args:
   # The item is published as a subname of the application id, which Flatpak already
   # lets us own, so talking to the watcher is the only permission needed.
   - --talk-name=org.kde.StatusNotifierWatcher
+  # Deliberately no --filesystem. The Video Clock saver plays a video the user
+  # chooses, but it is chosen through Gtk.FileDialog, which is the file chooser
+  # portal in here - the portal registers the pick with the document portal and
+  # grants access to that one file, persistently, so it is still playable on
+  # later runs. Nothing else on the disk needs to be reachable.
+  #
+  # Nor is there a codec extension. org.gnome.Platform//50 already declares
+  # org.freedesktop.Platform.codecs-extra, which installs alongside the runtime
+  # and puts a full libavcodec - H.265 and the rest - on the GStreamer plugin
+  # path, so an MP4 out of a phone decodes without anything added here.
 modules:
   - name: screen-savor
     buildsystem: meson

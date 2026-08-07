@@ -45,12 +45,22 @@
         left out falls back to the built-in default.
       </description>
     </key>
-    <key name="aerial-clock-tuning" type="a{sd}">
+    <key name="video-clock-tuning" type="a{sd}">
       <default>{}</default>
-      <summary>Aerial Clock Tuning</summary>
+      <summary>Video Clock Tuning</summary>
       <description>
-        Adjusted values for the Aerial Clock screensaver, keyed by name. Anything
+        Adjusted values for the Video Clock screensaver, keyed by name. Anything
         left out falls back to the built-in default.
+      </description>
+    </key>
+    <key name="video-clock-file" type="s">
+      <default>''</default>
+      <summary>Video Clock Background</summary>
+      <description>
+        The video played behind the clock. Empty means the one that ships with
+        the application. Inside the sandbox this holds the document portal path
+        the file chooser hands back, which is what keeps the file readable on
+        later runs without the application asking for the filesystem.
       </description>
     </key>
   </schema>

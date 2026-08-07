@@ -27,6 +27,16 @@ class _AnimatedSaver(Gtk.DrawingArea):
         """Step the animation by dt seconds. Returns True if a redraw is due."""
         raise NotImplementedError
 
+    def teardown(self):
+        """Let go of anything held outside GTK. Called when the window closes.
+
+        Most savers need nothing here - the frame clock stops of its own accord
+        once the widget leaves the screen, and everything else they own dies
+        with the widget. A saver holding something GTK knows nothing about, a
+        media pipeline or a thread, has to be told when the run is over, and
+        this is where it finds out.
+        """
+
     def _on_tick(self, widget, clock):
         now = clock.get_frame_time()
         if self._last_frame:
