@@ -186,12 +186,19 @@ class WeatherFetcher:
         self.on_update = on_update
         self.timeout_id = None
         self.current_data = None
+        self._fetching = False  # Prevent overlapping fetches
 
         if location.is_valid():
-            self._fetch()
+            # Delay initial fetch slightly to avoid blocking on startup
+            GLib.timeout_add(500, self._initial_fetch)
             self.timeout_id = GLib.timeout_add(
                 self.REFRESH_INTERVAL_MS, self._fetch
             )
+
+    def _initial_fetch(self):
+        """Initial fetch after a small delay to avoid blocking startup."""
+        self._fetch()
+        return GLib.SOURCE_REMOVE
 
     def stop(self):
         """Cancel the refresh timer."""
@@ -204,6 +211,11 @@ class WeatherFetcher:
         if not self.location.is_valid():
             return GLib.SOURCE_CONTINUE
 
+        # Skip if already fetching to prevent overlapping requests
+        if self._fetching:
+            return GLib.SOURCE_CONTINUE
+
+        self._fetching = True
         self.provider.fetch(
             self.location.latitude,
             self.location.longitude,
@@ -212,6 +224,7 @@ class WeatherFetcher:
         return GLib.SOURCE_CONTINUE
 
     def _on_fetched(self, data, error):
+        self._fetching = False
         if error:
             print(f"Weather fetch error: {error}")
             # Keep stale data on screen rather than clearing it

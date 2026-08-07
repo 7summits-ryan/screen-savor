@@ -149,11 +149,20 @@ class VideoClockSaver(_AnimatedSaver):
                 provider, self.WEATHER_LOCATION, self._on_weather_update
             )
 
+        # Cached Pango objects to avoid recreating every frame
+        self._time_layout = None
+        self._date_layout = None
+        self._weather_layout = None
+        self._cached_time_font_size = None
+        self._cached_date_font_size = None
+
         # A window torn down by GTK itself never reaches SaverWindow.destroy,
         # so the pipeline gets a second way out. Both are idempotent.
         self.connect("unrealize", lambda *_: self.teardown())
 
+        # Start video pipeline with initial settings
         self._setup_video()
+        self._apply_initial_speed()
 
     # -- video ------------------------------------------------------------
 
@@ -218,6 +227,28 @@ class VideoClockSaver(_AnimatedSaver):
         except Exception as e:
             print(f"Video Clock: failed to setup video: {e}")
             self.teardown()
+
+    def _apply_initial_speed(self):
+        """Apply playback speed setting once pipeline is ready."""
+        if self.pipeline is None:
+            return
+
+        speed = min(max(TUNING["playback_speed"], MIN_SPEED), MAX_SPEED)
+        if abs(speed - 1.0) < 1e-6:
+            return  # Already at default speed
+
+        # Retry a few times as pipeline may not be ready immediately
+        attempts = [0]  # Use list for closure
+        def try_apply():
+            if self._apply_speed(speed):
+                self._speed = speed
+                return GLib.SOURCE_REMOVE
+            attempts[0] += 1
+            if attempts[0] > 10:
+                return GLib.SOURCE_REMOVE
+            return GLib.SOURCE_CONTINUE
+
+        GLib.timeout_add(100, try_apply)
 
     def teardown(self):
         """Stop the pipeline and let go of it. Idempotent.
@@ -406,8 +437,6 @@ class VideoClockSaver(_AnimatedSaver):
 
     def advance(self, dt):
         """Always redraw for smooth video playback."""
-        self._sync_video()
-
         current_time = time.localtime()
         show_seconds = TUNING["show_seconds"] > 0.5
         use_12hr = TUNING["hour_format"] > 0.5
@@ -513,11 +542,15 @@ class VideoClockSaver(_AnimatedSaver):
         glow = TUNING["glow_intensity"]
         text_opacity = TUNING["text_opacity"]
 
-        # Create Pango layout for time
-        time_layout = PangoCairo.create_layout(cr)
+        # Create or reuse Pango layout for time
         font_size = int(120 * clock_scale)
-        font_desc = Pango.FontDescription(f"Comfortaa Bold {font_size}")
-        time_layout.set_font_description(font_desc)
+        if self._time_layout is None or self._cached_time_font_size != font_size:
+            self._time_layout = PangoCairo.create_layout(cr)
+            font_desc = Pango.FontDescription(f"Comfortaa Bold {font_size}")
+            self._time_layout.set_font_description(font_desc)
+            self._cached_time_font_size = font_size
+
+        time_layout = self._time_layout
         time_layout.set_text(self.last_time_str, -1)
 
         # Get time dimensions
@@ -530,10 +563,14 @@ class VideoClockSaver(_AnimatedSaver):
         date_width = 0
         date_height = 0
         if self.last_date_str:
-            date_layout = PangoCairo.create_layout(cr)
             date_font_size = int(40 * clock_scale)
-            date_font_desc = Pango.FontDescription(f"Comfortaa {date_font_size}")
-            date_layout.set_font_description(date_font_desc)
+            if self._date_layout is None or self._cached_date_font_size != date_font_size:
+                self._date_layout = PangoCairo.create_layout(cr)
+                date_font_desc = Pango.FontDescription(f"Comfortaa {date_font_size}")
+                self._date_layout.set_font_description(date_font_desc)
+                self._cached_date_font_size = date_font_size
+
+            date_layout = self._date_layout
             date_layout.set_text(self.last_date_str, -1)
             ink_rect, logical_rect = date_layout.get_pixel_extents()
             date_width = logical_rect.width
@@ -645,11 +682,14 @@ class VideoClockSaver(_AnimatedSaver):
                     print(f"Video Clock: failed to pre-render weather icon: {e}")
                     self.weather_icon_surface = None
 
-        # Create layout for temperature text
-        layout = PangoCairo.create_layout(cr)
-        font_size = 32
-        font_desc = Pango.FontDescription(f"Comfortaa Bold {font_size}")
-        layout.set_font_description(font_desc)
+        # Create or reuse layout for temperature text
+        if self._weather_layout is None:
+            self._weather_layout = PangoCairo.create_layout(cr)
+            font_size = 32
+            font_desc = Pango.FontDescription(f"Comfortaa Bold {font_size}")
+            self._weather_layout.set_font_description(font_desc)
+
+        layout = self._weather_layout
         layout.set_text(self.last_temp_str, -1)
 
         # Get text dimensions
