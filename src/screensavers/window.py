@@ -181,12 +181,21 @@ class ScreensaversWindow(Adw.ApplicationWindow):
                 groups[section] = group
                 page.add(group)
 
-            row = Adw.SpinRow(title=title, subtitle=subtitle, digits=digits)
-            row.set_adjustment(Gtk.Adjustment(value=saver_cls.TUNING[key],
-                                              lower=lower, upper=upper,
-                                              step_increment=step,
-                                              page_increment=step * 10))
-            row.connect("notify::value", self.on_tune_changed, saver_cls, key)
+            # Use SwitchRow for boolean tunables (0.0-1.0 range with step 1.0)
+            is_boolean = (lower == 0.0 and upper == 1.0 and step == 1.0)
+
+            if is_boolean:
+                row = Adw.SwitchRow(title=title, subtitle=subtitle)
+                row.set_active(saver_cls.TUNING[key] > 0.5)
+                row.connect("notify::active", self.on_tune_switch_changed, saver_cls, key)
+            else:
+                row = Adw.SpinRow(title=title, subtitle=subtitle, digits=digits)
+                row.set_adjustment(Gtk.Adjustment(value=saver_cls.TUNING[key],
+                                                  lower=lower, upper=upper,
+                                                  step_increment=step,
+                                                  page_increment=step * 10))
+                row.connect("notify::value", self.on_tune_changed, saver_cls, key)
+
             group.add(row)
             rows.append((key, row))
 
@@ -206,11 +215,20 @@ class ScreensaversWindow(Adw.ApplicationWindow):
         self.settings.set_value(saver_cls.TUNING_KEY,
                                 GLib.Variant("a{sd}", saver_cls.TUNING))
 
+    def on_tune_switch_changed(self, row, param, saver_cls, key):
+        saver_cls.TUNING[key] = 1.0 if row.get_active() else 0.0
+        self.settings.set_value(saver_cls.TUNING_KEY,
+                                GLib.Variant("a{sd}", saver_cls.TUNING))
+
     def on_tune_reset(self, button, saver_cls, rows):
-        # Setting each row emits notify::value, which is what writes the value
-        # back through on_tune_changed.
+        # Setting each row emits notify::value or notify::active, which writes
+        # the value back through on_tune_changed or on_tune_switch_changed.
         for key, row in rows:
-            row.set_value(saver_cls.DEFAULT_TUNING[key])
+            default_value = saver_cls.DEFAULT_TUNING[key]
+            if isinstance(row, Adw.SwitchRow):
+                row.set_active(default_value > 0.5)
+            else:
+                row.set_value(default_value)
 
     def on_run_clicked(self, button, saver_cls):
         session = SaverSession(self.get_application(), saver_cls,

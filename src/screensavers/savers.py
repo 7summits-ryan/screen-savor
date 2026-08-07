@@ -10,6 +10,7 @@ import random
 from screensavers.base import _AnimatedSaver
 from screensavers.gorillas import GorillasSaver
 from screensavers.pipes import PipesSaver
+from screensavers.aerial import AerialClockSaver
 
 # Glyph atlases, keyed by (font_px, scale). One saver instance runs per monitor,
 # and the masks are only ever read, so screens that work out to the same cell
@@ -450,6 +451,7 @@ SAVERS = (
     ("Matrix Rain", MatrixSaver),
     ("Gorillas", GorillasSaver),
     ("Pipes", PipesSaver),
+    ("Aerial Clock", AerialClockSaver),
     ("Color Pulse", ColorPulseSaver),
 )
 
