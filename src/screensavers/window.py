@@ -2,6 +2,7 @@ import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 from gi.repository import Gtk, Adw, Gio, GLib
+import os
 
 from screensavers.savers import SAVERS
 from screensavers.session import SaverSession
@@ -41,7 +42,8 @@ class ScreensaversWindow(Adw.ApplicationWindow):
             row = Adw.ActionRow(title=name)
             # Suffixes stack left to right, so the gear lands beside the Run
             # button of the one saver that has anything to adjust.
-            if getattr(saver_cls, "TUNABLES", None):
+            if (getattr(saver_cls, "TUNABLES", None)
+                    or getattr(saver_cls, "FILE_TUNABLES", None)):
                 gear = Gtk.Button(icon_name="emblem-system-symbolic")
                 gear.set_valign(Gtk.Align.CENTER)
                 gear.add_css_class("flat")
@@ -167,19 +169,20 @@ class ScreensaversWindow(Adw.ApplicationWindow):
         page = Adw.PreferencesPage()
 
         rows = []
+        file_rows = []
         groups = {}
-        for spec in saver_cls.TUNABLES:
+
+        # Files first, so their section is the one that ends up at the top of
+        # the page - what a saver is playing matters more than how it is drawn.
+        for spec in getattr(saver_cls, "FILE_TUNABLES", ()):
+            group = self._tune_group(page, groups, spec[0])
+            row = self._build_file_row(saver_cls, spec)
+            group.add(row)
+            file_rows.append((spec, row))
+
+        for spec in getattr(saver_cls, "TUNABLES", ()):
             section, key, title, subtitle, lower, upper, step, digits = spec
-            group = groups.get(section)
-            if group is None:
-                # Only the first section carries the note; repeating it under
-                # every heading would be noise.
-                group = Adw.PreferencesGroup(
-                    title=section,
-                    description=None if groups else
-                    "Takes effect immediately, including on a running screensaver")
-                groups[section] = group
-                page.add(group)
+            group = self._tune_group(page, groups, section)
 
             # Use SwitchRow for boolean tunables (0.0-1.0 range with step 1.0)
             is_boolean = (lower == 0.0 and upper == 1.0 and step == 1.0)
@@ -202,13 +205,120 @@ class ScreensaversWindow(Adw.ApplicationWindow):
         reset = Gtk.Button(label="Reset to Defaults")
         reset.set_halign(Gtk.Align.CENTER)
         reset.add_css_class("pill")
-        reset.connect("clicked", self.on_tune_reset, saver_cls, rows)
+        reset.connect("clicked", self.on_tune_reset, saver_cls, rows, file_rows)
         actions = Adw.PreferencesGroup()
         actions.add(reset)
         page.add(actions)
 
         dialog.add(page)
         dialog.present(self)
+
+    def _tune_group(self, page, groups, section):
+        group = groups.get(section)
+        if group is None:
+            # Only the first section carries the note; repeating it under
+            # every heading would be noise.
+            group = Adw.PreferencesGroup(
+                title=section,
+                description=None if groups else
+                "Takes effect immediately, including on a running screensaver")
+            groups[section] = group
+            page.add(group)
+        return group
+
+    # -- file settings ----------------------------------------------------
+
+    def _build_file_row(self, saver_cls, spec):
+        """A row for one of the settings a saver names in FILE_TUNABLES.
+
+        The subtitle carries the current pick rather than an explanation of the
+        setting, which is the way libadwaita rows show a chosen value - and the
+        only way it fits, with two buttons already taking the width. What the
+        setting is for goes in the tooltip, and the title says most of it.
+        """
+        title, subtitle, empty_label = spec[2], spec[3], spec[4]
+        row = Adw.ActionRow(title=title, subtitle=self._file_label(saver_cls, spec))
+        row.set_tooltip_text(subtitle)
+
+        choose = Gtk.Button(label="Choose…", valign=Gtk.Align.CENTER)
+        choose.connect("clicked", self.on_pick_file, saver_cls, spec, row)
+        row.add_suffix(choose)
+
+        clear = Gtk.Button(icon_name="edit-clear-symbolic",
+                           valign=Gtk.Align.CENTER)
+        clear.add_css_class("flat")
+        clear.set_tooltip_text(f"Go back to the {empty_label.lower()}")
+        clear.connect("clicked",
+                      lambda _b: self._set_file(saver_cls, spec, row, ""))
+        row.add_suffix(clear)
+
+        return row
+
+    def _file_label(self, saver_cls, spec):
+        """What to show for the current pick.
+
+        The basename rather than the path: inside the sandbox the stored path is
+        a document portal handle, and only its last component means anything to
+        the person who chose it. A file that has since gone says so, because the
+        saver would otherwise fall back without explaining itself.
+        """
+        path = saver_cls.FILES.get(spec[1]) or ""
+        if not path:
+            return spec[4]
+        name = os.path.basename(path)
+        return name if os.path.exists(path) else f"{name} (missing)"
+
+    def on_pick_file(self, button, saver_cls, spec, row):
+        title, mimes, suffixes = spec[2], spec[5], spec[6]
+
+        # Both MIME types and suffixes: the portal turns a filter into globs and
+        # content types, and not every desktop looks at both.
+        file_filter = Gtk.FileFilter(name=title)
+        for mime in mimes:
+            file_filter.add_mime_type(mime)
+        for suffix in suffixes:
+            file_filter.add_suffix(suffix)
+        filters = Gio.ListStore.new(Gtk.FileFilter)
+        filters.append(file_filter)
+
+        dialog = Gtk.FileDialog(title=f"Choose a {title}", modal=True)
+        dialog.set_filters(filters)
+        dialog.set_default_filter(file_filter)
+
+        current = saver_cls.FILES.get(spec[1]) or ""
+        if current and os.path.exists(current):
+            dialog.set_initial_file(Gio.File.new_for_path(current))
+
+        # Parented on the window rather than the preferences dialog, which is an
+        # Adw.Dialog and so not a Gtk.Window at all.
+        #
+        # This is a Gtk.FileDialog on purpose: in the sandbox it goes through the
+        # file chooser portal, which registers the pick with the document portal
+        # and grants this app persistent access to that one file. That is what
+        # lets the manifest ask for no filesystem permission at all.
+        dialog.open(self, None, self.on_file_chosen, (saver_cls, spec, row))
+
+    def on_file_chosen(self, dialog, result, data):
+        saver_cls, spec, row = data
+        try:
+            chosen = dialog.open_finish(result)
+        except GLib.Error:
+            return          # dismissed, which arrives as an error rather than None
+        if chosen is None:
+            return
+
+        path = chosen.get_path()
+        if path is None:
+            return          # not a local file, so there is nothing to play
+
+        self._set_file(saver_cls, spec, row, path)
+
+    def _set_file(self, saver_cls, spec, row, path):
+        # The same two writes a tunable gets: the live dictionary a running
+        # saver reads, and the key it is restored from next time.
+        saver_cls.FILES[spec[1]] = path
+        self.settings.set_string(spec[1], path)
+        row.set_subtitle(self._file_label(saver_cls, spec))
 
     def on_tune_changed(self, row, param, saver_cls, key):
         saver_cls.TUNING[key] = row.get_value()
@@ -220,7 +330,7 @@ class ScreensaversWindow(Adw.ApplicationWindow):
         self.settings.set_value(saver_cls.TUNING_KEY,
                                 GLib.Variant("a{sd}", saver_cls.TUNING))
 
-    def on_tune_reset(self, button, saver_cls, rows):
+    def on_tune_reset(self, button, saver_cls, rows, file_rows):
         # Setting each row emits notify::value or notify::active, which writes
         # the value back through on_tune_changed or on_tune_switch_changed.
         for key, row in rows:
@@ -229,6 +339,11 @@ class ScreensaversWindow(Adw.ApplicationWindow):
                 row.set_active(default_value > 0.5)
             else:
                 row.set_value(default_value)
+
+        # No signal to ride on here, so these are written back directly.
+        for spec, row in file_rows:
+            self._set_file(saver_cls, spec, row,
+                           saver_cls.DEFAULT_FILES[spec[1]])
 
     def on_run_clicked(self, button, saver_cls):
         session = SaverSession(self.get_application(), saver_cls,

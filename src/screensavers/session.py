@@ -52,6 +52,14 @@ class SaverWindow(Gtk.Window):
             self._on_dismissed(self)
         return True
 
+    def destroy(self):
+        # Dropping the widget is not enough for a saver that owns something
+        # outside GTK: a media pipeline goes on decoding with no window left to
+        # draw into, once per monitor, for every run. Both this and teardown
+        # itself are safe to reach twice.
+        self.saver.teardown()
+        super().destroy()
+
     def on_motion(self, ctrl, x, y):
         if self.last_x is None or self.last_y is None:
             self.last_x = x

@@ -10,7 +10,7 @@ import random
 from screensavers.base import _AnimatedSaver
 from screensavers.gorillas import GorillasSaver
 from screensavers.pipes import PipesSaver
-from screensavers.aerial import AerialClockSaver
+from screensavers.video import VideoClockSaver
 
 # Glyph atlases, keyed by (font_px, scale). One saver instance runs per monitor,
 # and the masks are only ever read, so screens that work out to the same cell
@@ -451,7 +451,7 @@ SAVERS = (
     ("Matrix Rain", MatrixSaver),
     ("Gorillas", GorillasSaver),
     ("Pipes", PipesSaver),
-    ("Aerial Clock", AerialClockSaver),
+    ("Video Clock", VideoClockSaver),
     ("Color Pulse", ColorPulseSaver),
 )
 
@@ -468,12 +468,18 @@ def load_tuning(settings):
     values it no longer recognises are simply dropped and anything absent keeps
     its default. Called once at start-up; from then on the preferences window
     writes straight into the live dictionaries.
+
+    Settings that are not numbers cannot live in that dictionary, which is
+    stored as a{sd}, so a saver names them separately and each one is a key of
+    its own. They are restored into a live dictionary all the same.
     """
     for _name, saver_cls in SAVERS:
         key = getattr(saver_cls, "TUNING_KEY", None)
-        if key is None:
-            continue
-        saver_cls.TUNING.update(saver_cls.DEFAULT_TUNING)
-        for name, value in settings.get_value(key).unpack().items():
-            if name in saver_cls.DEFAULT_TUNING:
-                saver_cls.TUNING[name] = float(value)
+        if key is not None:
+            saver_cls.TUNING.update(saver_cls.DEFAULT_TUNING)
+            for name, value in settings.get_value(key).unpack().items():
+                if name in saver_cls.DEFAULT_TUNING:
+                    saver_cls.TUNING[name] = float(value)
+
+        for spec in getattr(saver_cls, "FILE_TUNABLES", ()):
+            saver_cls.FILES[spec[1]] = settings.get_string(spec[1])
