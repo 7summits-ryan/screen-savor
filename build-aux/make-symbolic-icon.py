@@ -1,0 +1,153 @@
+#!/usr/bin/python3
+"""Derive the symbolic tray icon from the full-colour app icon.
+
+The tray needs a monochrome 16px glyph, and tracing one by hand would drift
+from the artwork every time the app icon is touched. Instead the silhouette is
+taken straight out of the existing SVG: paths[0] is the whole outer shape -
+tilted CRT body, neck and base - and paths[5] is the screen inside it. Emitted
+as one path under fill-rule="evenodd", the screen knocks a hole in the body.
+
+Run from the project root; writes the icon in place:
+
+    /usr/bin/python3 build-aux/make-symbolic-icon.py
+
+Note the interpreter. The python3 on PATH may be a Homebrew build with no
+PyGObject; this needs the system one for gi.
+"""
+
+import os
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+import gi
+gi.require_version("Rsvg", "2.0")
+from gi.repository import Gio, GLib, Rsvg
+import cairo
+
+APP_ID = "software._7summits.ScreenSavor"
+SRC = f"data/icons/hicolor/scalable/apps/{APP_ID}.svg"
+DEST = f"data/icons/hicolor/symbolic/apps/{APP_ID}-symbolic.svg"
+SVG_NS = "{http://www.w3.org/2000/svg}"
+
+# The bezel the artwork gives us is a single pixel wide once scaled to 16px and
+# breaks up along the bottom-left edge. Shrinking the knockout thickens it.
+SCREEN_INSET = 0.87
+
+# Height the glyph occupies in the 16x16 canvas. The shape is taller than it is
+# wide, so height is what fills the box; 15 leaves half a unit top and bottom.
+TARGET_HEIGHT = 15.0
+
+
+def scale_path_about_centre(d, k):
+    """Scale an absolute-coordinate path by k about its own bounding-box centre.
+
+    Only correct for absolute M/L/C/Z data, which is what this artwork uses.
+    Assert rather than silently mangle a relative command if the icon is ever
+    redrawn by a tool that emits them.
+    """
+    tokens = re.findall(r"[A-Za-z]|-?\d*\.?\d+(?:[eE][-+]?\d+)?", d)
+    commands = {t for t in tokens if t.isalpha()}
+    if not commands <= {"M", "L", "C", "Z", "z"}:
+        raise SystemExit(f"{SRC}: unsupported path commands {commands - {'M', 'L', 'C', 'Z', 'z'}}")
+
+    numbers = [float(t) for t in tokens if not t.isalpha()]
+    xs, ys = numbers[0::2], numbers[1::2]
+    centre = ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2)
+
+    out, axis = [], 0
+    for t in tokens:
+        if t.isalpha():
+            out.append(t)
+        else:
+            c = centre[axis % 2]
+            out.append(f"{c + (float(t) - c) * k:.3f}")
+            axis += 1
+    return " ".join(out)
+
+
+def alpha_bbox(svg_bytes, px):
+    """Pixel bounds of the non-transparent area in a px-square render."""
+    handle = Rsvg.Handle.new_from_stream_sync(
+        Gio.MemoryInputStream.new_from_bytes(GLib.Bytes.new(svg_bytes)),
+        None, Rsvg.HandleFlags.FLAGS_NONE, None)
+
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, px, px)
+    viewport = Rsvg.Rectangle()
+    viewport.x, viewport.y, viewport.width, viewport.height = 0, 0, px, px
+    handle.render_document(cairo.Context(surface), viewport)
+    surface.flush()
+
+    data, stride = surface.get_data(), surface.get_stride()
+    xs, ys = [], []
+    for y in range(px):
+        for x in range(px):
+            if data[y * stride + x * 4 + 3] > 8:
+                xs.append(x)
+                ys.append(y)
+    if not xs:
+        raise SystemExit("rendered nothing - the source paths did not draw")
+    return min(xs), min(ys), max(xs) + 1, max(ys) + 1
+
+
+def main():
+    if not os.path.exists(SRC):
+        raise SystemExit(f"{SRC} not found - run this from the project root")
+
+    root = ET.parse(SRC).getroot()
+    paths = root.findall(f"{SVG_NS}path")
+    body, screen = paths[0].get("d").strip(), paths[5].get("d").strip()
+    combined = f"{body} {scale_path_about_centre(screen, SCREEN_INSET)}"
+
+    # The artwork does not fill its own viewBox, so measure where it actually
+    # lands rather than trusting the declared bounds.
+    vb_x, vb_y, vb_w, _ = (float(v) for v in root.get("viewBox").split())
+    probe = 1024
+    x0, y0, x1, y1 = alpha_bbox(
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{probe}" height="{probe}" '
+        f'viewBox="{root.get("viewBox")}">'
+        f'<path fill="#000" fill-rule="evenodd" d="{combined}"/></svg>'.encode(),
+        probe)
+
+    per_unit = probe / vb_w
+    ux0, uy0 = vb_x + x0 / per_unit, vb_y + y0 / per_unit
+    width = (x1 - x0) / per_unit
+    height = (y1 - y0) / per_unit
+
+    scale = TARGET_HEIGHT / height
+    tx = (16.0 - width * scale) / 2.0 - ux0 * scale
+    ty = (16.0 - TARGET_HEIGHT) / 2.0 - uy0 * scale
+
+    # Two recolouring mechanisms in one file. GTK and GNOME Shell mask by alpha
+    # and ignore the fill entirely; KDE substitutes the colour inside the
+    # stylesheet below, which only reaches shapes painting with currentColor.
+    # The colour attribute on the root is a presentation attribute, so it loses
+    # the cascade to the class rule - KDE still wins - while keeping
+    # currentColor defined for any renderer that skips <style> blocks.
+    svg = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!-- Generated by build-aux/make-symbolic-icon.py from the full-colour app
+     icon. Regenerate rather than hand-editing. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+     viewBox="0 0 16 16" color="#232629">
+  <style id="current-color-scheme" type="text/css">
+    .ColorScheme-Text {{ color: #232629; }}
+  </style>
+  <g transform="translate({tx:.5f},{ty:.5f}) scale({scale:.7f})">
+    <path class="ColorScheme-Text" fill="currentColor" fill-rule="evenodd"
+          d="{combined}"/>
+  </g>
+</svg>
+'''
+
+    os.makedirs(os.path.dirname(DEST), exist_ok=True)
+    with open(DEST, "w") as f:
+        f.write(svg)
+
+    # A blank icon is the failure that would otherwise reach the panel unnoticed.
+    check = alpha_bbox(svg.encode(), 160)
+    print(f"{DEST}: glyph {width * scale:.2f}x{height * scale:.2f} units, "
+          f"renders {check[2] - check[0]}x{check[3] - check[1]}px at 160px")
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -78,11 +78,24 @@ class ScreensaversWindow(Adw.ApplicationWindow):
         self.enable_row.add_suffix(self.enable_switch)
         settings_group.add(self.enable_row)
 
+        # Show Tray Icon. Like the daemon row above, the subtitle has to say
+        # what actually happened - a tray icon depends on the desktop providing
+        # somewhere to put it, and on GNOME that means an extension. Without
+        # this the switch would look like it simply does nothing.
+        self.tray_row = Adw.ActionRow(title="Show Tray Icon")
+        tray_switch = Gtk.Switch(valign=Gtk.Align.CENTER)
+        self.settings.bind("show-tray-icon", tray_switch, "active",
+                           Gio.SettingsBindFlags.DEFAULT)
+        self.tray_row.add_suffix(tray_switch)
+        settings_group.add(self.tray_row)
+        self.settings.connect("changed::show-tray-icon",
+                              lambda *_: self.refresh_tray_state())
+        self.refresh_tray_state()
+
         # getattr: the screenshot tool in build-aux drives this window from a
         # bare Adw.Application that has no daemon.
         daemon = getattr(self.get_application(), "daemon", None)
         if daemon is not None:
-            daemon.on_status_changed = self.on_daemon_status_changed
             self.on_daemon_status_changed(daemon)
 
         # Idle Timeout
@@ -113,6 +126,30 @@ class ScreensaversWindow(Adw.ApplicationWindow):
     def on_daemon_status_changed(self, daemon):
         self.enable_row.set_subtitle(daemon.status)
         self.enable_switch.set_sensitive(daemon.available or not daemon.detected)
+
+    def refresh_tray_state(self):
+        """Match the close behaviour and the row's subtitle to the desktop.
+
+        Called by the application whenever the tray comes or goes, because a
+        watcher can appear and disappear under us - disabling the GNOME
+        extension takes the tray away from a running app.
+
+        Hiding on close is allowed only while an icon is really on screen. With
+        no tray, a hidden window would be unreachable and the app unquittable,
+        so closing has to keep meaning quit.
+        """
+        # getattr, as above: the screenshot tool has no application of ours.
+        available = getattr(self.get_application(), "tray_available", False)
+        self.set_hide_on_close(available)
+
+        if not self.settings.get_boolean("show-tray-icon"):
+            self.tray_row.set_subtitle("Closing the window quits Screen Savor")
+        elif available:
+            self.tray_row.set_subtitle(
+                "Closing the window minimizes to the tray, and the screensaver "
+                "hides it when it starts")
+        else:
+            self.tray_row.set_subtitle("No system tray found on this desktop")
 
     def on_default_saver_changed(self, row, param):
         selected_idx = row.get_selected()

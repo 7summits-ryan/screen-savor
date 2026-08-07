@@ -24,6 +24,13 @@ install_data(
   install_dir: join_paths(icondir, 'scalable', 'apps')
 )
 
+# The monochrome variant the tray icon asks for by name. Generated from the
+# icon above by build-aux/make-symbolic-icon.py.
+install_data(
+  join_paths('icons', 'hicolor', 'symbolic', 'apps', app_id + '-symbolic.svg'),
+  install_dir: join_paths(icondir, 'symbolic', 'apps')
+)
+
 foreach size : ['64x64', '128x128', '256x256', '512x512']
   install_data(
     join_paths('icons', 'hicolor', size, 'apps', app_id + '.png'),
