@@ -9,6 +9,7 @@ import random
 
 from screensavers.base import _AnimatedSaver
 from screensavers.gorillas import GorillasSaver
+from screensavers.pipes import PipesSaver
 
 # Glyph atlases, keyed by (font_px, scale). One saver instance runs per monitor,
 # and the masks are only ever read, so screens that work out to the same cell
@@ -448,6 +449,7 @@ SAVERS = (
     ("DVD Logo", DVDLogoSaver),
     ("Matrix Rain", MatrixSaver),
     ("Gorillas", GorillasSaver),
+    ("Pipes", PipesSaver),
     ("Color Pulse", ColorPulseSaver),
 )
 

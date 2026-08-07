@@ -138,12 +138,45 @@ class ScreensaversApplication(Adw.Application):
         win = self.main_window
         if not win:
             win = ScreensaversWindow(application=self)
-        win.present()
+        self._present_window(win)
 
     @property
     def main_window(self):
         return next((w for w in self.get_windows()
                      if isinstance(w, ScreensaversWindow)), None)
+
+    def _present_window(self, win):
+        """Present and raise window to foreground on both GNOME and KDE."""
+        # Make the window visible first
+        win.set_visible(True)
+
+        # Try to get a timestamp from the display
+        display = win.get_display()
+        if display is not None:
+            # Get the current event time or use current time
+            # This helps with focus stealing prevention
+            try:
+                timestamp = display.get_app_launch_context().get_startup_notify_id()
+            except:
+                timestamp = None
+
+        # Present with all the force we can muster
+        win.present()
+
+        # Additional methods to ensure window comes to front
+        # present_with_time() uses a timestamp to bypass focus stealing prevention
+        surface = win.get_surface()
+        if surface is not None:
+            # Get current timestamp from GDK
+            from gi.repository import Gdk
+            timestamp = Gdk.CURRENT_TIME
+            win.present_with_time(timestamp)
+
+        # Make sure the window is unminimized
+        win.unminimize()
+
+        # Request focus
+        win.grab_focus()
 
     def hide_main_window(self):
         win = self.main_window
@@ -188,7 +221,7 @@ class ScreensaversApplication(Adw.Application):
             # nothing to reach it by. get_realized() keeps this from firing
             # against a window that has simply not been shown yet.
             if not available and win.get_realized() and not win.get_visible():
-                win.present()
+                self._present_window(win)
 
         self.ensure_reachable_in_background()
 
