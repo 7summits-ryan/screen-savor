@@ -6,6 +6,7 @@ import os
 
 from screensavers.savers import SAVERS
 from screensavers.session import SaverSession
+from screensavers.weather import search_cities, WeatherLocation
 
 class ScreensaversWindow(Adw.ApplicationWindow):
     def __init__(self, **kwargs):
@@ -180,6 +181,13 @@ class ScreensaversWindow(Adw.ApplicationWindow):
             group.add(row)
             file_rows.append((spec, row))
 
+        # Weather location picker if this saver has one
+        weather_row = None
+        if hasattr(saver_cls, 'WEATHER_LOCATION'):
+            group = self._tune_group(page, groups, "Weather")
+            weather_row = self._build_weather_row(saver_cls)
+            group.add(weather_row)
+
         for spec in getattr(saver_cls, "TUNABLES", ()):
             section, key, title, subtitle, lower, upper, step, digits = spec
             group = self._tune_group(page, groups, section)
@@ -205,7 +213,7 @@ class ScreensaversWindow(Adw.ApplicationWindow):
         reset = Gtk.Button(label="Reset to Defaults")
         reset.set_halign(Gtk.Align.CENTER)
         reset.add_css_class("pill")
-        reset.connect("clicked", self.on_tune_reset, saver_cls, rows, file_rows)
+        reset.connect("clicked", self.on_tune_reset, saver_cls, rows, file_rows, weather_row)
         actions = Adw.PreferencesGroup()
         actions.add(reset)
         page.add(actions)
@@ -330,7 +338,7 @@ class ScreensaversWindow(Adw.ApplicationWindow):
         self.settings.set_value(saver_cls.TUNING_KEY,
                                 GLib.Variant("a{sd}", saver_cls.TUNING))
 
-    def on_tune_reset(self, button, saver_cls, rows, file_rows):
+    def on_tune_reset(self, button, saver_cls, rows, file_rows, weather_row):
         # Setting each row emits notify::value or notify::active, which writes
         # the value back through on_tune_changed or on_tune_switch_changed.
         for key, row in rows:
@@ -344,6 +352,161 @@ class ScreensaversWindow(Adw.ApplicationWindow):
         for spec, row in file_rows:
             self._set_file(saver_cls, spec, row,
                            saver_cls.DEFAULT_FILES[spec[1]])
+
+        # Clear weather location
+        if weather_row is not None:
+            self._set_weather_location(saver_cls, weather_row, WeatherLocation())
+
+    # -- weather location -------------------------------------------------
+
+    def _build_weather_row(self, saver_cls):
+        """A row for choosing the weather location via city search."""
+        row = Adw.ActionRow(
+            title="Location",
+            subtitle=self._weather_label(saver_cls)
+        )
+        row.set_tooltip_text("Search for a city to show weather conditions")
+
+        choose = Gtk.Button(label="Search…", valign=Gtk.Align.CENTER)
+        choose.connect("clicked", self.on_pick_weather_location, saver_cls, row)
+        row.add_suffix(choose)
+
+        clear = Gtk.Button(
+            icon_name="edit-clear-symbolic",
+            valign=Gtk.Align.CENTER
+        )
+        clear.add_css_class("flat")
+        clear.set_tooltip_text("Clear weather location")
+        clear.connect("clicked",
+                      lambda _b: self._set_weather_location(saver_cls, row, WeatherLocation()))
+        row.add_suffix(clear)
+
+        return row
+
+    def _weather_label(self, saver_cls):
+        """What to show for the current weather location."""
+        loc = saver_cls.WEATHER_LOCATION
+        if loc and loc.is_valid():
+            return loc.name
+        return "Not set"
+
+    def on_pick_weather_location(self, button, saver_cls, row):
+        """Show a city search dialog."""
+        dialog = Adw.Dialog(title="Choose Weather Location")
+        dialog.set_content_width(500)
+        dialog.set_content_height(600)
+
+        toolbar = Adw.ToolbarView()
+        header = Adw.HeaderBar()
+        toolbar.add_top_bar(header)
+
+        content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        content_box.set_margin_top(12)
+        content_box.set_margin_bottom(12)
+        content_box.set_margin_start(12)
+        content_box.set_margin_end(12)
+
+        # Search entry
+        search_entry = Gtk.SearchEntry()
+        search_entry.set_placeholder_text("Search for a city…")
+        content_box.append(search_entry)
+
+        # Results list
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_vexpand(True)
+        scrolled.set_hexpand(True)
+        scrolled.set_min_content_height(400)
+
+        results_box = Gtk.ListBox()
+        results_box.set_selection_mode(Gtk.SelectionMode.NONE)
+        results_box.add_css_class("boxed-list")
+        scrolled.set_child(results_box)
+        content_box.append(scrolled)
+
+        toolbar.set_content(content_box)
+        dialog.set_child(toolbar)
+
+        # Search handler
+        def on_search_changed(entry):
+            query = entry.get_text().strip()
+            if not query:
+                # Clear results
+                while True:
+                    child = results_box.get_first_child()
+                    if child is None:
+                        break
+                    results_box.remove(child)
+                return
+
+            # Show spinner
+            while True:
+                child = results_box.get_first_child()
+                if child is None:
+                    break
+                results_box.remove(child)
+
+            spinner_row = Adw.ActionRow(title="Searching…")
+            spinner = Gtk.Spinner()
+            spinner.start()
+            spinner_row.add_suffix(spinner)
+            results_box.append(spinner_row)
+
+            # Fetch results
+            search_cities(query, lambda results, error: on_search_results(results, error, results_box))
+
+        def on_search_results(results, error, list_box):
+            # Clear existing rows
+            while True:
+                child = list_box.get_first_child()
+                if child is None:
+                    break
+                list_box.remove(child)
+
+            if error:
+                error_row = Adw.ActionRow(title="Search failed", subtitle=str(error))
+                list_box.append(error_row)
+                return
+
+            if not results:
+                empty_row = Adw.ActionRow(title="No results found")
+                list_box.append(empty_row)
+                return
+
+            for result in results:
+                name = result['name']
+                subtitle_parts = []
+                if result.get('admin1'):
+                    subtitle_parts.append(result['admin1'])
+                if result.get('country'):
+                    subtitle_parts.append(result['country'])
+                subtitle = ", ".join(subtitle_parts) if subtitle_parts else ""
+
+                result_row = Adw.ActionRow(title=name, subtitle=subtitle)
+                select_btn = Gtk.Button(label="Select", valign=Gtk.Align.CENTER)
+                select_btn.connect("clicked", lambda btn, r=result: on_location_selected(r))
+                result_row.add_suffix(select_btn)
+                list_box.append(result_row)
+
+        def on_location_selected(result):
+            location = WeatherLocation(
+                result['name'],
+                result['latitude'],
+                result['longitude']
+            )
+            self._set_weather_location(saver_cls, row, location)
+            dialog.close()
+
+        search_entry.connect("search-changed", on_search_changed)
+        dialog.present(self)
+
+    def _set_weather_location(self, saver_cls, row, location):
+        """Store the weather location and update the UI."""
+        saver_cls.WEATHER_LOCATION = location
+        self.settings.set_value(
+            'video-clock-weather-location',
+            location.to_variant()
+        )
+        row.set_subtitle(self._weather_label(saver_cls))
 
     def on_run_clicked(self, button, saver_cls):
         session = SaverSession(self.get_application(), saver_cls,

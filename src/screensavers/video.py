@@ -2,7 +2,7 @@ import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Gst', '1.0')
 gi.require_version('PangoCairo', '1.0')
-from gi.repository import Gtk, Gst, GLib, Pango, PangoCairo
+from gi.repository import Gtk, Gst, GLib, Pango, PangoCairo, Gdk
 import cairo
 import functools
 import math
@@ -10,6 +10,9 @@ import time
 import os
 
 from screensavers.base import _AnimatedSaver
+from screensavers.weather import (
+    OpenMeteoProvider, WeatherFetcher, WeatherLocation, wmo_code_to_icon_name
+)
 
 # Initialize GStreamer
 Gst.init(None)
@@ -34,6 +37,8 @@ DEFAULT_TUNING = {
     "background_opacity": 0.3,
     "text_opacity": 0.85,
     "hour_format": 0.0,         # 0=24hr, 1=12hr
+    "show_date": 0.0,           # 0=off, 1=on
+    "show_weather": 0.0,        # 0=off, 1=on
 }
 
 TUNING = dict(DEFAULT_TUNING)
@@ -46,10 +51,14 @@ TUNABLES = (
      "Display seconds in addition to hours and minutes", 0.0, 1.0, 1.0, 0),
     ("Clock", "hour_format", "12-Hour Format",
      "Use 12-hour format with AM/PM instead of 24-hour", 0.0, 1.0, 1.0, 0),
+    ("Clock", "show_date", "Show Date",
+     "Display the date below the time", 0.0, 1.0, 1.0, 0),
     ("Clock", "clock_size", "Clock Size",
      "Scale factor for the clock display", 0.5, 3.0, 0.1, 1),
     ("Clock", "position_y", "Vertical Position",
      "Clock position: 0=top, 0.5=center, 1=bottom", 0.0, 1.0, 0.05, 2),
+    ("Weather", "show_weather", "Show Weather",
+     "Display current weather in the top right corner", 0.0, 1.0, 1.0, 0),
     ("Appearance", "glow_intensity", "Glow Intensity",
      "Brightness of the glowing effect", 0.0, 1.0, 0.1, 1),
     ("Appearance", "background_opacity", "Background Opacity",
@@ -105,6 +114,8 @@ class VideoClockSaver(_AnimatedSaver):
     FILES = FILES
     DEFAULT_FILES = DEFAULT_FILES
 
+    WEATHER_LOCATION = WeatherLocation()  # Class attribute for weather location
+
     # How many frames a pipeline may refuse a speed change before we stop
     # asking. Refusals are normally just the preroll not being finished yet.
     SPEED_ATTEMPTS = 60
@@ -112,6 +123,7 @@ class VideoClockSaver(_AnimatedSaver):
     def __init__(self):
         super().__init__()
         self.last_time_str = ""
+        self.last_date_str = ""
         self.pipeline = None
         self.video_sink = None
         self.current_sample = None
@@ -124,6 +136,16 @@ class VideoClockSaver(_AnimatedSaver):
         self._giving_up = False     # even the bundled video failed
         self._speed = 1.0           # the rate the pipeline is actually at
         self._speed_refusals = 0
+
+        # Weather
+        self.weather_fetcher = None
+        self.weather_data = None
+        self.weather_icon_texture = None
+        if self.WEATHER_LOCATION.is_valid():
+            provider = OpenMeteoProvider()
+            self.weather_fetcher = WeatherFetcher(
+                provider, self.WEATHER_LOCATION, self._on_weather_update
+            )
 
         # A window torn down by GTK itself never reaches SaverWindow.destroy,
         # so the pipeline gets a second way out. Both are idempotent.
@@ -203,6 +225,10 @@ class VideoClockSaver(_AnimatedSaver):
         to this widget; both have to be cut before the state change, or a frame
         arrives halfway through the shutdown.
         """
+        if self.weather_fetcher is not None:
+            self.weather_fetcher.stop()
+            self.weather_fetcher = None
+
         pipeline, self.pipeline = self.pipeline, None
         self.current_sample = None
         self._path = None
@@ -341,6 +367,37 @@ class VideoClockSaver(_AnimatedSaver):
             self._giving_up = True
         return True
 
+    # -- weather ----------------------------------------------------------
+
+    def _on_weather_update(self, data):
+        """Called when weather data arrives or refreshes."""
+        self.weather_data = data
+        self.weather_icon_texture = None  # force reload on next draw
+
+    def _load_weather_icon(self, icon_name):
+        """Load a symbolic icon from the theme and cache the texture."""
+        if not icon_name:
+            return None
+
+        try:
+            display = self.get_display()
+            if not display:
+                return None
+
+            theme = Gtk.IconTheme.get_for_display(display)
+            paintable = theme.lookup_icon(
+                icon_name, None, 48, 1,
+                self.get_direction(),
+                Gtk.IconLookupFlags.FORCE_SYMBOLIC
+            )
+
+            if paintable:
+                return paintable.download_texture()
+        except Exception as e:
+            print(f"Video Clock: failed to load icon {icon_name}: {e}")
+
+        return None
+
     # -- animation --------------------------------------------------------
 
     def advance(self, dt):
@@ -365,6 +422,14 @@ class VideoClockSaver(_AnimatedSaver):
                 time_str = time.strftime("%H:%M", current_time)
 
         self.last_time_str = time_str
+
+        # Date string
+        show_date = TUNING["show_date"] > 0.5
+        if show_date:
+            self.last_date_str = time.strftime("%A %-d %B", current_time)
+        else:
+            self.last_date_str = ""
+
         # Always return True for smooth video
         return True
 
@@ -386,6 +451,10 @@ class VideoClockSaver(_AnimatedSaver):
 
         # Draw clock overlay
         self._draw_clock(cr, width, height)
+
+        # Draw weather overlay
+        if TUNING["show_weather"] > 0.5:
+            self._draw_weather(cr, width, height)
 
     def _draw_video_frame(self, cr, sample, width, height):
         """Draw the given video frame scaled to cover the screen."""
@@ -430,7 +499,7 @@ class VideoClockSaver(_AnimatedSaver):
             buffer.unmap(map_info)
 
     def _draw_clock(self, cr, width, height):
-        """Draw the clock using Comfortaa font."""
+        """Draw the clock (and optional date) using Comfortaa font."""
         if not self.last_time_str:
             return
 
@@ -440,32 +509,52 @@ class VideoClockSaver(_AnimatedSaver):
         glow = TUNING["glow_intensity"]
         text_opacity = TUNING["text_opacity"]
 
-        # Create Pango layout for text
-        layout = PangoCairo.create_layout(cr)
-
-        # Load Comfortaa font
+        # Create Pango layout for time
+        time_layout = PangoCairo.create_layout(cr)
         font_size = int(120 * clock_scale)
         font_desc = Pango.FontDescription(f"Comfortaa Bold {font_size}")
-        layout.set_font_description(font_desc)
-        layout.set_text(self.last_time_str, -1)
+        time_layout.set_font_description(font_desc)
+        time_layout.set_text(self.last_time_str, -1)
 
-        # Get text dimensions
-        ink_rect, logical_rect = layout.get_pixel_extents()
-        text_width = logical_rect.width
-        text_height = logical_rect.height
+        # Get time dimensions
+        ink_rect, logical_rect = time_layout.get_pixel_extents()
+        time_width = logical_rect.width
+        time_height = logical_rect.height
+
+        # Date layout if enabled
+        date_layout = None
+        date_width = 0
+        date_height = 0
+        if self.last_date_str:
+            date_layout = PangoCairo.create_layout(cr)
+            date_font_size = int(40 * clock_scale)
+            date_font_desc = Pango.FontDescription(f"Comfortaa {date_font_size}")
+            date_layout.set_font_description(date_font_desc)
+            date_layout.set_text(self.last_date_str, -1)
+            ink_rect, logical_rect = date_layout.get_pixel_extents()
+            date_width = logical_rect.width
+            date_height = logical_rect.height
+
+        # Total height and width for centering
+        total_width = max(time_width, date_width)
+        spacing = 20 * clock_scale if date_layout else 0
+        total_height = time_height + spacing + date_height
 
         # Calculate position
-        x = (width - text_width) / 2
-        y = pos_y * (height - text_height)
+        x = (width - time_width) / 2
+        y = pos_y * (height - total_height)
+
+        date_x = (width - date_width) / 2 if date_layout else 0
+        date_y = y + time_height + spacing
 
         # Draw frosted glass background
         if bg_opacity > 0:
             padding = 40 * clock_scale
             corner_radius = 30 * clock_scale
-            bx = x - padding
+            bx = (width - total_width) / 2 - padding
             by = y - padding
-            bw = text_width + 2 * padding
-            bh = text_height + 2 * padding
+            bw = total_width + 2 * padding
+            bh = total_height + 2 * padding
 
             cr.new_sub_path()
             cr.arc(bx + bw - corner_radius, by + corner_radius, corner_radius, -math.pi/2, 0)
@@ -477,7 +566,7 @@ class VideoClockSaver(_AnimatedSaver):
             cr.set_source_rgba(1, 1, 1, bg_opacity * 0.2)
             cr.fill()
 
-        # Draw glow layers
+        # Draw glow layers for time
         if glow > 0:
             for blur in range(5):
                 alpha = glow * 0.4 * (5 - blur) / 5
@@ -485,10 +574,92 @@ class VideoClockSaver(_AnimatedSaver):
                 cr.save()
                 cr.move_to(x - blur_offset, y - blur_offset)
                 cr.set_source_rgba(0.95, 0.97, 1.0, alpha)
-                PangoCairo.show_layout(cr, layout)
+                PangoCairo.show_layout(cr, time_layout)
                 cr.restore()
 
-        # Draw solid text (tunable opacity)
+        # Draw solid time text
         cr.move_to(x, y)
         cr.set_source_rgba(0.95, 0.97, 1.0, text_opacity)
+        PangoCairo.show_layout(cr, time_layout)
+
+        # Draw date if present
+        if date_layout:
+            # Glow for date (smaller, subtler)
+            if glow > 0:
+                for blur in range(3):
+                    alpha = glow * 0.3 * (3 - blur) / 3
+                    blur_offset = blur * 2
+                    cr.save()
+                    cr.move_to(date_x - blur_offset, date_y - blur_offset)
+                    cr.set_source_rgba(0.95, 0.97, 1.0, alpha)
+                    PangoCairo.show_layout(cr, date_layout)
+                    cr.restore()
+
+            # Solid date text (slightly more transparent than time)
+            cr.move_to(date_x, date_y)
+            cr.set_source_rgba(0.95, 0.97, 1.0, text_opacity * 0.85)
+            PangoCairo.show_layout(cr, date_layout)
+
+    def _draw_weather(self, cr, width, height):
+        """Draw weather icon and temperature in the top-right corner."""
+        if not self.weather_data or self.weather_data.temperature is None:
+            return
+
+        # Load icon if not cached
+        if self.weather_icon_texture is None:
+            icon_name = wmo_code_to_icon_name(
+                self.weather_data.weather_code,
+                self.weather_data.is_day
+            )
+            self.weather_icon_texture = self._load_weather_icon(icon_name)
+
+        # Format temperature
+        temp_c = self.weather_data.temperature
+        temp_str = f"{round(temp_c)}°"
+
+        # Create layout for temperature
+        layout = PangoCairo.create_layout(cr)
+        font_size = 32
+        font_desc = Pango.FontDescription(f"Comfortaa Bold {font_size}")
+        layout.set_font_description(font_desc)
+        layout.set_text(temp_str, -1)
+
+        # Get text dimensions
+        ink_rect, logical_rect = layout.get_pixel_extents()
+        temp_width = logical_rect.width
+        temp_height = logical_rect.height
+
+        # Icon dimensions
+        icon_size = 40
+        spacing = 12
+        padding = 24
+
+        # Position in top-right corner
+        total_width = icon_size + spacing + temp_width
+        x = width - total_width - padding
+        y = padding
+
+        # Draw icon if available
+        if self.weather_icon_texture:
+            cr.save()
+            try:
+                icon_surface = Gdk.cairo_surface_create_from_texture(
+                    self.weather_icon_texture
+                )
+                # Scale to desired size
+                scale = icon_size / self.weather_icon_texture.get_width()
+                cr.translate(x, y)
+                cr.scale(scale, scale)
+                cr.set_source_surface(icon_surface, 0, 0)
+                cr.paint_with_alpha(0.9)
+            except Exception as e:
+                print(f"Video Clock: failed to draw weather icon: {e}")
+            finally:
+                cr.restore()
+
+        # Draw temperature text
+        text_x = x + icon_size + spacing
+        text_y = y + (icon_size - temp_height) / 2
+        cr.move_to(text_x, text_y)
+        cr.set_source_rgba(0.95, 0.97, 1.0, 0.9)
         PangoCairo.show_layout(cr, layout)

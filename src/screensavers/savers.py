@@ -473,6 +473,8 @@ def load_tuning(settings):
     stored as a{sd}, so a saver names them separately and each one is a key of
     its own. They are restored into a live dictionary all the same.
     """
+    from screensavers.weather import WeatherLocation
+
     for _name, saver_cls in SAVERS:
         key = getattr(saver_cls, "TUNING_KEY", None)
         if key is not None:
@@ -483,3 +485,11 @@ def load_tuning(settings):
 
         for spec in getattr(saver_cls, "FILE_TUNABLES", ()):
             saver_cls.FILES[spec[1]] = settings.get_string(spec[1])
+
+        # Load weather location for VideoClockSaver
+        if hasattr(saver_cls, 'WEATHER_LOCATION'):
+            try:
+                variant = settings.get_value('video-clock-weather-location')
+                saver_cls.WEATHER_LOCATION = WeatherLocation.from_variant(variant)
+            except Exception as e:
+                print(f"Failed to load weather location: {e}")

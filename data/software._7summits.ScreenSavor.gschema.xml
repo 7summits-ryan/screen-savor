@@ -63,5 +63,13 @@
         later runs without the application asking for the filesystem.
       </description>
     </key>
+    <key name="video-clock-weather-location" type="(sdd)">
+      <default>('', 0.0, 0.0)</default>
+      <summary>Video Clock Weather Location</summary>
+      <description>
+        The location for weather data: (name, latitude, longitude). Empty name
+        means no weather overlay.
+      </description>
+    </key>
   </schema>
 </schemalist>
