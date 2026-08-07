@@ -141,6 +141,8 @@ class VideoClockSaver(_AnimatedSaver):
         self.weather_fetcher = None
         self.weather_data = None
         self.weather_icon_texture = None
+        self.weather_icon_surface = None  # Cached Cairo surface for icon
+        self.last_temp_str = None  # Cache temperature string
         if self.WEATHER_LOCATION.is_valid():
             provider = OpenMeteoProvider()
             self.weather_fetcher = WeatherFetcher(
@@ -373,6 +375,8 @@ class VideoClockSaver(_AnimatedSaver):
         """Called when weather data arrives or refreshes."""
         self.weather_data = data
         self.weather_icon_texture = None  # force reload on next draw
+        self.weather_icon_surface = None  # clear cached surface
+        self.last_temp_str = None  # clear cached temp string
 
     def _load_weather_icon(self, icon_name):
         """Load a symbolic icon from the theme and cache the texture."""
@@ -605,24 +609,48 @@ class VideoClockSaver(_AnimatedSaver):
         if not self.weather_data or self.weather_data.temperature is None:
             return
 
-        # Load icon if not cached
-        if self.weather_icon_texture is None:
-            icon_name = wmo_code_to_icon_name(
-                self.weather_data.weather_code,
-                self.weather_data.is_day
-            )
-            self.weather_icon_texture = self._load_weather_icon(icon_name)
-
-        # Format temperature
+        # Cache temperature string (only regenerate when temp changes)
         temp_c = self.weather_data.temperature
         temp_str = f"{round(temp_c)}°"
+        if temp_str != self.last_temp_str:
+            self.last_temp_str = temp_str
 
-        # Create layout for temperature
+        # Load and cache icon surface (only once per weather update)
+        if self.weather_icon_surface is None and self.weather_data.weather_code is not None:
+            if self.weather_icon_texture is None:
+                icon_name = wmo_code_to_icon_name(
+                    self.weather_data.weather_code,
+                    self.weather_data.is_day
+                )
+                self.weather_icon_texture = self._load_weather_icon(icon_name)
+
+            if self.weather_icon_texture:
+                try:
+                    # Pre-render the icon surface at the target size
+                    icon_size = 40
+                    scale = icon_size / self.weather_icon_texture.get_width()
+
+                    self.weather_icon_surface = cairo.ImageSurface(
+                        cairo.FORMAT_ARGB32, icon_size, icon_size
+                    )
+                    icon_cr = cairo.Context(self.weather_icon_surface)
+                    icon_cr.scale(scale, scale)
+
+                    temp_surface = Gdk.cairo_surface_create_from_texture(
+                        self.weather_icon_texture
+                    )
+                    icon_cr.set_source_surface(temp_surface, 0, 0)
+                    icon_cr.paint()
+                except Exception as e:
+                    print(f"Video Clock: failed to pre-render weather icon: {e}")
+                    self.weather_icon_surface = None
+
+        # Create layout for temperature text
         layout = PangoCairo.create_layout(cr)
         font_size = 32
         font_desc = Pango.FontDescription(f"Comfortaa Bold {font_size}")
         layout.set_font_description(font_desc)
-        layout.set_text(temp_str, -1)
+        layout.set_text(self.last_temp_str, -1)
 
         # Get text dimensions
         ink_rect, logical_rect = layout.get_pixel_extents()
@@ -639,23 +667,12 @@ class VideoClockSaver(_AnimatedSaver):
         x = width - total_width - padding
         y = padding
 
-        # Draw icon if available
-        if self.weather_icon_texture:
+        # Draw pre-rendered icon (much faster than scaling every frame)
+        if self.weather_icon_surface:
             cr.save()
-            try:
-                icon_surface = Gdk.cairo_surface_create_from_texture(
-                    self.weather_icon_texture
-                )
-                # Scale to desired size
-                scale = icon_size / self.weather_icon_texture.get_width()
-                cr.translate(x, y)
-                cr.scale(scale, scale)
-                cr.set_source_surface(icon_surface, 0, 0)
-                cr.paint_with_alpha(0.9)
-            except Exception as e:
-                print(f"Video Clock: failed to draw weather icon: {e}")
-            finally:
-                cr.restore()
+            cr.set_source_surface(self.weather_icon_surface, x, y)
+            cr.paint_with_alpha(0.9)
+            cr.restore()
 
         # Draw temperature text
         text_x = x + icon_size + spacing
