@@ -45,5 +45,13 @@
         left out falls back to the built-in default.
       </description>
     </key>
+    <key name="aerial-clock-tuning" type="a{sd}">
+      <default>{}</default>
+      <summary>Aerial Clock Tuning</summary>
+      <description>
+        Adjusted values for the Aerial Clock screensaver, keyed by name. Anything
+        left out falls back to the built-in default.
+      </description>
+    </key>
   </schema>
 </schemalist>
