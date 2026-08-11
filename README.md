@@ -7,7 +7,7 @@ A fun, lightweight screensaver application built with GTK4 and Libadwaita.
 - **Multiple Screensavers**: Choose from DVD Logo, Matrix Rain, Gorillas, Pipes, Video Clock,
   and Color Pulse visualizers
 - **Video Clock**: A clock over a looping video. Point it at any MP4 of your own and set the
-  playback speed; it falls back to the video that ships with the app
+  playback speed; with no video chosen, the clock sits on a black background
 - **Idle Detection**: Automatically activates after a configurable idle timeout. Uses the
   `ext-idle-notify-v1` Wayland protocol on KDE Plasma and wlroots compositors, and GNOME's
   Mutter IdleMonitor on GNOME, which implements no idle protocol. The backend is probed

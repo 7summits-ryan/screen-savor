@@ -108,41 +108,6 @@ class OpenMeteoProvider(WeatherProvider):
             callback(None, str(e))
 
 
-def wmo_code_to_icon_name(code, is_day=True):
-    """Map WMO weather code to Adwaita weather-*-symbolic icon name.
-
-    WMO codes from Open-Meteo:
-    0: Clear sky
-    1,2,3: Mainly clear, partly cloudy, overcast
-    45,48: Fog
-    51,53,55: Drizzle
-    61,63,65: Rain
-    71,73,75,77: Snow
-    80,81,82: Rain showers
-    85,86: Snow showers
-    95,96,99: Thunderstorm
-    """
-    if code == 0:
-        return 'weather-clear-night-symbolic' if not is_day else 'weather-clear-symbolic'
-    elif code in (1, 2):
-        return 'weather-few-clouds-night-symbolic' if not is_day else 'weather-few-clouds-symbolic'
-    elif code == 3:
-        return 'weather-overcast-symbolic'
-    elif code in (45, 48):
-        return 'weather-fog-symbolic'
-    elif code in (51, 53, 55, 61, 63, 65):
-        return 'weather-showers-symbolic'
-    elif code in (71, 73, 75, 77, 85, 86):
-        return 'weather-snow-symbolic'
-    elif code in (80, 81, 82):
-        return 'weather-showers-scattered-symbolic'
-    elif code in (95, 96, 99):
-        return 'weather-storm-symbolic'
-    else:
-        # Unknown code
-        return 'weather-severe-alert-symbolic'
-
-
 class WeatherLocation:
     """A saved location: name, coordinates, and the provider to use."""
 
@@ -234,6 +199,9 @@ class WeatherFetcher:
         self.on_update(self.current_data)
 
 
+# Shared HTTP session for geocoding searches (reuses connections)
+_GEOCODE_SESSION = None
+
 def search_cities(query, callback):
     """Search for cities via Open-Meteo geocoding API.
 
@@ -246,7 +214,11 @@ def search_cities(query, callback):
         callback([], None)
         return
 
-    session = Soup.Session()
+    global _GEOCODE_SESSION
+    if _GEOCODE_SESSION is None:
+        _GEOCODE_SESSION = Soup.Session()
+
+    session = _GEOCODE_SESSION
     url = (
         f"https://geocoding-api.open-meteo.com/v1/search"
         f"?name={GLib.uri_escape_string(query.strip(), None, False)}"
