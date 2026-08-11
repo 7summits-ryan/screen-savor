@@ -2,26 +2,18 @@ import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Gst', '1.0')
 gi.require_version('PangoCairo', '1.0')
-from gi.repository import Gtk, Gst, GLib, Pango, PangoCairo, Gdk
+from gi.repository import Gtk, Gst, GLib, Pango, PangoCairo
 import cairo
-import functools
 import math
 import time
-import os
 
 from screensavers.base import _AnimatedSaver
 from screensavers.weather import (
-    OpenMeteoProvider, WeatherFetcher, WeatherLocation, wmo_code_to_icon_name
+    OpenMeteoProvider, WeatherFetcher, WeatherLocation
 )
 
 # Initialize GStreamer
 Gst.init(None)
-
-# The video that ships with the app, named relative to a data directory rather
-# than absolutely: one walk of those covers /app/share inside the sandbox,
-# /usr/share for a system install and ~/.local/share for a --user one, because
-# Flatpak puts all of them in XDG_DATA_DIRS.
-BUNDLED_VIDEO = os.path.join('screensavers', 'videos', 'default-aerial.mp4')
 
 # Rate limits. The floor matters for more than taste - a seek at rate 0 is not a
 # stopped video, it is a rejected event.
@@ -37,8 +29,10 @@ DEFAULT_TUNING = {
     "background_opacity": 0.3,
     "text_opacity": 0.85,
     "hour_format": 0.0,         # 0=24hr, 1=12hr
+    "pad_hour": 0.0,            # 0=4:01, 1=04:01
     "show_date": 0.0,           # 0=off, 1=on
     "show_weather": 0.0,        # 0=off, 1=on
+    "weather_opacity": 0.9,     # temperature text opacity
 }
 
 TUNING = dict(DEFAULT_TUNING)
@@ -51,6 +45,9 @@ TUNABLES = (
      "Display seconds in addition to hours and minutes", 0.0, 1.0, 1.0, 0),
     ("Clock", "hour_format", "12-Hour Format",
      "Use 12-hour format with AM/PM instead of 24-hour", 0.0, 1.0, 1.0, 0),
+    ("Clock", "pad_hour", "Leading Zero",
+     "Pad the hour to two digits, so 04:01 rather than 4:01",
+     0.0, 1.0, 1.0, 0),
     ("Clock", "show_date", "Show Date",
      "Display the date below the time", 0.0, 1.0, 1.0, 0),
     ("Clock", "clock_size", "Clock Size",
@@ -59,6 +56,8 @@ TUNABLES = (
      "Clock position: 0=top, 0.5=center, 1=bottom", 0.0, 1.0, 0.05, 2),
     ("Weather", "show_weather", "Show Weather",
      "Display current weather in the top right corner", 0.0, 1.0, 1.0, 0),
+    ("Weather", "weather_opacity", "Weather Opacity",
+     "Opacity of the temperature reading", 0.0, 1.0, 0.05, 2),
     ("Appearance", "glow_intensity", "Glow Intensity",
      "Brightness of the glowing effect", 0.0, 1.0, 0.1, 1),
     ("Appearance", "background_opacity", "Background Opacity",
@@ -78,28 +77,13 @@ TUNABLES = (
 FILE_TUNABLES = (
     ("Video", "video-clock-file", "Video File",
      "The looping video played behind the clock",
-     "Bundled aerial video",
+     "Black background",
      ("video/mp4",),
      ("mp4", "m4v")),
 )
 
 FILES = {"video-clock-file": ""}
 DEFAULT_FILES = dict(FILES)
-
-
-@functools.cache
-def bundled_video_path():
-    """Where the video that ships with the app ended up. Resolved once."""
-    for data_dir in (GLib.get_user_data_dir(), *GLib.get_system_data_dirs()):
-        candidate = os.path.join(data_dir, BUNDLED_VIDEO)
-        if os.path.exists(candidate):
-            return candidate
-
-    # Nothing installed anywhere, so this is the source tree being run in place.
-    local = os.path.abspath(os.path.join(
-        os.path.dirname(__file__), '..', '..', 'data', 'videos',
-        'default-aerial.mp4'))
-    return local if os.path.exists(local) else None
 
 
 class VideoClockSaver(_AnimatedSaver):
@@ -133,15 +117,13 @@ class VideoClockSaver(_AnimatedSaver):
         self._setting = (FILES["video-clock-file"] or "").strip()
         self._path = None           # what the current pipeline is playing
         self._rejected = None       # a file this machine could not decode
-        self._giving_up = False     # even the bundled video failed
+        self._giving_up = False     # nothing left to play; draw black
         self._speed = 1.0           # the rate the pipeline is actually at
         self._speed_refusals = 0
 
         # Weather
         self.weather_fetcher = None
         self.weather_data = None
-        self.weather_icon_texture = None
-        self.weather_icon_surface = None  # Cached Cairo surface for icon
         self.last_temp_str = None  # Cache temperature string
         if self.WEATHER_LOCATION.is_valid():
             provider = OpenMeteoProvider()
@@ -167,7 +149,7 @@ class VideoClockSaver(_AnimatedSaver):
     # -- video ------------------------------------------------------------
 
     def _wanted_path(self):
-        """The file that should be playing.
+        """The file that should be playing, or None for no video at all.
 
         Deliberately never touches the disk: this runs once a frame, and the
         stored path is usually a document-portal one, where a stat is a round
@@ -176,13 +158,17 @@ class VideoClockSaver(_AnimatedSaver):
         """
         if self._setting and self._setting != self._rejected:
             return self._setting
-        return bundled_video_path()
+        return None
 
     def _setup_video(self):
-        """Build and start the pipeline for whichever video is wanted."""
+        """Build and start the pipeline, if there is a video to play.
+
+        Nothing chosen is an ordinary state rather than a failure - the app
+        ships no video of its own - and it draws as a black backdrop for the
+        clock. There is nothing to retry in that case, so say so and stop.
+        """
         video_path = self._wanted_path()
         if not video_path:
-            print("Video Clock: video not found")
             self._giving_up = True
             return
 
@@ -194,7 +180,13 @@ class VideoClockSaver(_AnimatedSaver):
             'decodebin ! '
             'videoconvert ! '
             'video/x-raw,format=BGRA ! '
-            'appsink name=sink emit-signals=true sync=true max-buffers=2 drop=false'
+            # sync=true is what paces the video: without it the sink renders
+            # frames as fast as they decode, so playback runs at whatever speed
+            # the machine happens to manage rather than the speed it was shot
+            # at. The shallow queue is the part that keeps latency down - a draw
+            # that falls behind drops stale frames instead of backing the
+            # decoder up.
+            'appsink name=sink emit-signals=true sync=true max-buffers=1 drop=true'
         )
 
         try:
@@ -211,22 +203,28 @@ class VideoClockSaver(_AnimatedSaver):
                 bus.connect('message::eos', self._on_eos)
                 bus.connect('message::error', self._on_error)
 
-                # A fresh pipeline always starts at rate 1; _sync_video seeks it
-                # to the wanted speed as soon as the preroll allows.
+                # A fresh pipeline always starts at rate 1; _apply_initial_speed
+                # seeks it to the wanted speed as soon as the preroll allows.
                 self._speed = 1.0
                 self._speed_refusals = 0
 
                 ret = self.pipeline.set_state(Gst.State.PLAYING)
                 if ret == Gst.StateChangeReturn.FAILURE:
-                    print("Video Clock: Unable to set pipeline to playing state")
-                    self.teardown()
+                    # A file that has gone since it was chosen fails here rather
+                    # than on the bus: filesrc cannot open it, so the state
+                    # change never gets far enough to report an error message.
+                    print(f"Video Clock: cannot play {video_path}")
+                    self._rejected = video_path
+                    self._giving_up = True
+                    self._teardown_pipeline()
                 else:
                     self._path = video_path
                     print(f"Video Clock: Video pipeline started for {video_path}")
 
         except Exception as e:
             print(f"Video Clock: failed to setup video: {e}")
-            self.teardown()
+            self._giving_up = True
+            self._teardown_pipeline()
 
     def _apply_initial_speed(self):
         """Apply playback speed setting once pipeline is ready."""
@@ -251,6 +249,18 @@ class VideoClockSaver(_AnimatedSaver):
         GLib.timeout_add(100, try_apply)
 
     def teardown(self):
+        """Let go of everything GTK knows nothing about. Idempotent.
+
+        Called when the run ends, so the weather polling stops here too - unlike
+        _teardown_pipeline, which a video failure uses and which has no business
+        taking the weather overlay down with it.
+        """
+        if self.weather_fetcher is not None:
+            self.weather_fetcher.stop()
+            self.weather_fetcher = None
+        self._teardown_pipeline()
+
+    def _teardown_pipeline(self):
         """Stop the pipeline and let go of it. Idempotent.
 
         Order matters. The bus watch is a source on the main context that keeps
@@ -258,10 +268,6 @@ class VideoClockSaver(_AnimatedSaver):
         to this widget; both have to be cut before the state change, or a frame
         arrives halfway through the shutdown.
         """
-        if self.weather_fetcher is not None:
-            self.weather_fetcher.stop()
-            self.weather_fetcher = None
-
         pipeline, self.pipeline = self.pipeline, None
         self.current_sample = None
         self._path = None
@@ -276,10 +282,11 @@ class VideoClockSaver(_AnimatedSaver):
         if bus is not None:
             bus.remove_signal_watch()
 
+        # Set to NULL asynchronously to avoid blocking
         pipeline.set_state(Gst.State.NULL)
 
     def _restart_video(self):
-        self.teardown()
+        self._teardown_pipeline()
         self._setup_video()
         return GLib.SOURCE_REMOVE
 
@@ -382,84 +389,74 @@ class VideoClockSaver(_AnimatedSaver):
     def _on_error(self, bus, msg):
         """Handle GStreamer errors.
 
-        A file the user chose is the likely casualty - moved, deleted, or in a
-        codec this machine cannot decode - so fall back to the one that ships
-        with the app rather than leaving a bare gradient up. If that is what
-        failed, there is nowhere left to fall back to.
+        The file the user chose is the only candidate - moved, deleted, or in a
+        codec this machine cannot decode - so there is nothing to fall back to
+        but the black backdrop. Retrying it would only produce the same error
+        every frame, so the file is marked rejected and the pipeline let go.
         """
         err, debug = msg.parse_error()
         print(f"Video Clock: GStreamer error: {err}, {debug}")
 
-        bundled = bundled_video_path()
-        if self._path is not None and self._path != bundled and bundled:
+        if self._path is not None:
             self._rejected = self._path
-            # Not from inside the bus dispatch that is running right now:
-            # taking the bus watch down under its own handler is asking for it.
-            GLib.idle_add(self._restart_video)
-        else:
-            self._giving_up = True
+        self._giving_up = True
+
+        # Not from inside the bus dispatch that is running right now: taking
+        # the bus watch down under its own handler is asking for it.
+        GLib.idle_add(self._teardown_pipeline_idle)
         return True
+
+    def _teardown_pipeline_idle(self):
+        self._teardown_pipeline()
+        return GLib.SOURCE_REMOVE
 
     # -- weather ----------------------------------------------------------
 
     def _on_weather_update(self, data):
         """Called when weather data arrives or refreshes."""
         self.weather_data = data
-        self.weather_icon_texture = None  # force reload on next draw
-        self.weather_icon_surface = None  # clear cached surface
         self.last_temp_str = None  # clear cached temp string
-
-    def _load_weather_icon(self, icon_name):
-        """Load a symbolic icon from the theme and cache the texture."""
-        if not icon_name:
-            return None
-
-        try:
-            display = self.get_display()
-            if not display:
-                return None
-
-            theme = Gtk.IconTheme.get_for_display(display)
-            paintable = theme.lookup_icon(
-                icon_name, None, 48, 1,
-                self.get_direction(),
-                Gtk.IconLookupFlags.FORCE_SYMBOLIC
-            )
-
-            if paintable:
-                return paintable.download_texture()
-        except Exception as e:
-            print(f"Video Clock: failed to load icon {icon_name}: {e}")
-
-        return None
 
     # -- animation --------------------------------------------------------
 
     def advance(self, dt):
         """Always redraw for smooth video playback."""
+        # Only regenerate time string when it actually changes
         current_time = time.localtime()
         show_seconds = TUNING["show_seconds"] > 0.5
         use_12hr = TUNING["hour_format"] > 0.5
+        pad_hour = TUNING["pad_hour"] > 0.5
 
-        if use_12hr:
-            # 12-hour format with AM/PM
-            if show_seconds:
-                time_str = time.strftime("%I:%M:%S %p", current_time)
-            else:
-                time_str = time.strftime("%I:%M %p", current_time)
+        # Create time key based on what components are displayed. The settings
+        # belong in it as much as the clock does: a switch flipped mid-run has
+        # to produce a new string, and only the key decides whether one is built.
+        if show_seconds:
+            time_key = (current_time.tm_hour, current_time.tm_min, current_time.tm_sec,
+                        use_12hr, pad_hour)
         else:
-            # 24-hour format
-            if show_seconds:
-                time_str = time.strftime("%H:%M:%S", current_time)
-            else:
-                time_str = time.strftime("%H:%M", current_time)
+            time_key = (current_time.tm_hour, current_time.tm_min, use_12hr, pad_hour)
 
-        self.last_time_str = time_str
+        if not hasattr(self, '_last_time_key') or self._last_time_key != time_key:
+            self._last_time_key = time_key
 
-        # Date string
+            # %-I and %-H are the glibc way of asking for an unpadded number.
+            # Assembled rather than spelled out as four literals, which is what
+            # a third switch would turn into.
+            hour = ("%I" if use_12hr else "%H") if pad_hour else \
+                   ("%-I" if use_12hr else "%-H")
+            fmt = f"{hour}:%M:%S" if show_seconds else f"{hour}:%M"
+            if use_12hr:
+                fmt += " %p"
+
+            self.last_time_str = time.strftime(fmt, current_time)
+
+        # Date string - only regenerate when day changes
         show_date = TUNING["show_date"] > 0.5
         if show_date:
-            self.last_date_str = time.strftime("%A %-d %B", current_time)
+            date_key = (current_time.tm_year, current_time.tm_mon, current_time.tm_mday)
+            if not hasattr(self, '_last_date_key') or self._last_date_key != date_key:
+                self._last_date_key = date_key
+                self.last_date_str = time.strftime("%A %-d %B", current_time)
         else:
             self.last_date_str = ""
 
@@ -475,11 +472,11 @@ class VideoClockSaver(_AnimatedSaver):
         if sample and self.video_width > 0 and self.video_height > 0:
             self._draw_video_frame(cr, sample, width, height)
         else:
-            # Fallback gradient background
-            gradient = cairo.LinearGradient(0, 0, 0, height)
-            gradient.add_color_stop_rgb(0, 0.2, 0.4, 0.8)
-            gradient.add_color_stop_rgb(1, 0.6, 0.8, 1.0)
-            cr.set_source(gradient)
+            # No video: none chosen, or the chosen one would not play. Black
+            # rather than something decorative - this is also the first frame or
+            # two of every run, before the pipeline has prerolled, and anything
+            # brighter would flash.
+            cr.set_source_rgb(0, 0, 0)
             cr.paint()
 
         # Draw clock overlay
@@ -501,11 +498,16 @@ class VideoClockSaver(_AnimatedSaver):
             stride = cairo.ImageSurface.format_stride_for_width(
                 cairo.FORMAT_ARGB32, self.video_width)
 
-            # Copy to writable buffer
-            data = bytearray(map_info.data)
+            # Reuse buffer if same size, otherwise allocate new one
+            buffer_size = len(map_info.data)
+            if not hasattr(self, '_video_buffer') or len(self._video_buffer) != buffer_size:
+                self._video_buffer = bytearray(buffer_size)
+
+            # Fast copy using buffer protocol
+            self._video_buffer[:] = map_info.data
 
             surface = cairo.ImageSurface.create_for_data(
-                data,
+                self._video_buffer,
                 cairo.FORMAT_ARGB32,
                 self.video_width,
                 self.video_height,
@@ -522,7 +524,12 @@ class VideoClockSaver(_AnimatedSaver):
             cr.save()
             cr.translate(offset_x, offset_y)
             cr.scale(scale, scale)
+
             cr.set_source_surface(surface, 0, 0)
+            # GOOD rather than the default: the frame is being scaled to cover
+            # the screen every draw, and BEST costs more than it shows.
+            cr.get_source().set_filter(cairo.Filter.GOOD)
+
             cr.paint()
             cr.restore()
 
@@ -536,11 +543,13 @@ class VideoClockSaver(_AnimatedSaver):
         if not self.last_time_str:
             return
 
+        # Cache TUNING lookups used multiple times
         clock_scale = TUNING["clock_size"]
         pos_y = TUNING["position_y"]
         bg_opacity = TUNING["background_opacity"]
         glow = TUNING["glow_intensity"]
         text_opacity = TUNING["text_opacity"]
+        show_date = TUNING["show_date"] > 0.5
 
         # Create or reuse Pango layout for time
         font_size = int(120 * clock_scale)
@@ -549,9 +558,14 @@ class VideoClockSaver(_AnimatedSaver):
             font_desc = Pango.FontDescription(f"Comfortaa Bold {font_size}")
             self._time_layout.set_font_description(font_desc)
             self._cached_time_font_size = font_size
+            self._rendered_time_str = None  # Force text update on layout recreate
 
         time_layout = self._time_layout
-        time_layout.set_text(self.last_time_str, -1)
+
+        # Only update text if it changed
+        if self.last_time_str != getattr(self, '_rendered_time_str', None):
+            self._rendered_time_str = self.last_time_str
+            time_layout.set_text(self.last_time_str, -1)
 
         # Get time dimensions
         ink_rect, logical_rect = time_layout.get_pixel_extents()
@@ -569,9 +583,15 @@ class VideoClockSaver(_AnimatedSaver):
                 date_font_desc = Pango.FontDescription(f"Comfortaa {date_font_size}")
                 self._date_layout.set_font_description(date_font_desc)
                 self._cached_date_font_size = date_font_size
+                self._rendered_date_str = None  # Force text update on layout recreate
 
             date_layout = self._date_layout
-            date_layout.set_text(self.last_date_str, -1)
+
+            # Only update text if it changed
+            if self.last_date_str != getattr(self, '_rendered_date_str', None):
+                self._rendered_date_str = self.last_date_str
+                date_layout.set_text(self.last_date_str, -1)
+
             ink_rect, logical_rect = date_layout.get_pixel_extents()
             date_width = logical_rect.width
             date_height = logical_rect.height
@@ -642,45 +662,20 @@ class VideoClockSaver(_AnimatedSaver):
             PangoCairo.show_layout(cr, date_layout)
 
     def _draw_weather(self, cr, width, height):
-        """Draw weather icon and temperature in the top-right corner."""
+        """Draw temperature in the top-right corner."""
         if not self.weather_data or self.weather_data.temperature is None:
             return
+
+        # Cache weather opacity
+        weather_opacity = TUNING["weather_opacity"]
 
         # Cache temperature string (only regenerate when temp changes)
         temp_c = self.weather_data.temperature
         temp_str = f"{round(temp_c)}°"
+        if not hasattr(self, 'last_temp_str'):
+            self.last_temp_str = None
         if temp_str != self.last_temp_str:
             self.last_temp_str = temp_str
-
-        # Load and cache icon surface (only once per weather update)
-        if self.weather_icon_surface is None and self.weather_data.weather_code is not None:
-            if self.weather_icon_texture is None:
-                icon_name = wmo_code_to_icon_name(
-                    self.weather_data.weather_code,
-                    self.weather_data.is_day
-                )
-                self.weather_icon_texture = self._load_weather_icon(icon_name)
-
-            if self.weather_icon_texture:
-                try:
-                    # Pre-render the icon surface at the target size
-                    icon_size = 40
-                    scale = icon_size / self.weather_icon_texture.get_width()
-
-                    self.weather_icon_surface = cairo.ImageSurface(
-                        cairo.FORMAT_ARGB32, icon_size, icon_size
-                    )
-                    icon_cr = cairo.Context(self.weather_icon_surface)
-                    icon_cr.scale(scale, scale)
-
-                    temp_surface = Gdk.cairo_surface_create_from_texture(
-                        self.weather_icon_texture
-                    )
-                    icon_cr.set_source_surface(temp_surface, 0, 0)
-                    icon_cr.paint()
-                except Exception as e:
-                    print(f"Video Clock: failed to pre-render weather icon: {e}")
-                    self.weather_icon_surface = None
 
         # Create or reuse layout for temperature text
         if self._weather_layout is None:
@@ -688,35 +683,29 @@ class VideoClockSaver(_AnimatedSaver):
             font_size = 32
             font_desc = Pango.FontDescription(f"Comfortaa Bold {font_size}")
             self._weather_layout.set_font_description(font_desc)
+            self._rendered_temp_str = None  # Force text update on layout recreate
 
-        layout = self._weather_layout
-        layout.set_text(self.last_temp_str, -1)
+        temp_layout = self._weather_layout
 
-        # Get text dimensions
-        ink_rect, logical_rect = layout.get_pixel_extents()
-        temp_width = logical_rect.width
-        temp_height = logical_rect.height
+        # Only update text if it changed
+        if self.last_temp_str != getattr(self, '_rendered_temp_str', None):
+            self._rendered_temp_str = self.last_temp_str
+            temp_layout.set_text(self.last_temp_str, -1)
 
-        # Icon dimensions
-        icon_size = 40
-        spacing = 12
+        # Get dimensions
+        temp_ink, temp_logical = temp_layout.get_pixel_extents()
+        temp_width = temp_logical.width
+        temp_height = temp_logical.height
+
+        # Positioning
         padding = 24
 
-        # Position in top-right corner
-        total_width = icon_size + spacing + temp_width
-        x = width - total_width - padding
+        x = width - temp_width - padding
         y = padding
 
-        # Draw pre-rendered icon (much faster than scaling every frame)
-        if self.weather_icon_surface:
-            cr.save()
-            cr.set_source_surface(self.weather_icon_surface, x, y)
-            cr.paint_with_alpha(0.9)
-            cr.restore()
-
-        # Draw temperature text
-        text_x = x + icon_size + spacing
-        text_y = y + (icon_size - temp_height) / 2
-        cr.move_to(text_x, text_y)
-        cr.set_source_rgba(0.95, 0.97, 1.0, 0.9)
-        PangoCairo.show_layout(cr, layout)
+        # Draw temperature
+        cr.save()
+        cr.set_source_rgba(0.95, 0.97, 1.0, weather_opacity)
+        cr.move_to(x, y)
+        PangoCairo.show_layout(cr, temp_layout)
+        cr.restore()

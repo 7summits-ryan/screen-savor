@@ -38,13 +38,6 @@ foreach size : ['64x64', '128x128', '256x256', '512x512']
   )
 endforeach
 
-# The video the Video Clock screensaver falls back on, and starts out with,
-# when the user has not chosen one of their own.
-install_data(
-  join_paths('videos', 'default-aerial.mp4'),
-  install_dir: join_paths(get_option('datadir'), 'screensavers', 'videos')
-)
-
 # Install Comfortaa font for the Video Clock screensaver
 install_data(
   join_paths('fonts', 'Comfortaa.ttf'),
