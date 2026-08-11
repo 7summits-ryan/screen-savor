@@ -159,13 +159,8 @@ class SaverSession:
     def _on_dismissed(self, win):
         if self._stopping:
             return
-        # Tearing down the windows from inside one of their own event handlers
-        # is asking for trouble; wait for the dispatch to unwind first.
-        GLib.idle_add(self._stop_idle)
-
-    def _stop_idle(self):
-        self.stop()
-        return GLib.SOURCE_REMOVE
+        # Use high-priority idle to reduce lag while being safe
+        GLib.idle_add(self.stop, priority=GLib.PRIORITY_HIGH)
 
     def _on_close_request(self, win):
         # Something outside the app closed a window - end the whole run rather
